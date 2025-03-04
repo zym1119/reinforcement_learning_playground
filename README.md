@@ -2,7 +2,29 @@
 My playground for learning RL
 
 # Environment
-https://nio.feishu.cn/docx/LAG0dvuzVo4TBzxBDGic6Rmsnxf
+Install `gym` python package.
+```bash
+pip install gym
+pip install pygame
+```
+
+Try this demo code to check `gym` installation.
+```python
+import gym
+
+env = gym.make('CartPole-v1', render_mode='human')
+
+state = env.reset()
+
+for _ in range(100):
+    env.render()
+    action = env.action_space.sample()
+    next_state, reward, done, _, _ = env.step(action)
+    if done:
+        state = env.reset()
+env.close()
+```
+
 
 # Usage
 
