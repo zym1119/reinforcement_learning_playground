@@ -85,6 +85,7 @@ class DQNTrainer(BaseTrainer):
             total_reward += reward
             # train batch
             if len(self.replay_buffer) >= self.batch_size:
+                # sample batch data
                 batch_state, batch_action, batch_reward, batch_next_state, batch_done = self.replay_buffer.sample(
                     self.batch_size)
                 # to tensor
@@ -174,7 +175,11 @@ class DQNInferer(BaseInferer):
         action_dim = self.env.action_space.n
         self.model = DQN(state_dim, 128, action_dim)
         self.model.load_state_dict(torch.load(ckpt_path))
-        
+
+    def select_action(self, logits):
+        action = logits.argmax(dim=-1)
+        return action
+
 
 def get_dqn_trainer(env, run_dir, **kwargs):
     return DQNTrainer(env, run_dir, **kwargs)

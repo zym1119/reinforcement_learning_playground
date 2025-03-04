@@ -91,7 +91,6 @@ class BaseTrainer(nn.Module):
             logger.info(log_str)
 
 
-
 class BaseInferer(nn.Module):
     def __init__(self, env, ckpt_path, steps=1000):
         super().__init__()
@@ -123,8 +122,7 @@ class BaseInferer(nn.Module):
             # get action & next state
             state_tensor = torch.tensor(state, dtype=torch.float32)
             logits = self.model(state_tensor)
-            dist = torch.distributions.Categorical(logits=logits)
-            action = dist.sample()
+            action = self.select_action(logits)
             next_state, _, done, _, _ = self.env.step(action.item())
             steps += 1
 
@@ -132,6 +130,11 @@ class BaseInferer(nn.Module):
                 return steps
             else:
                 state = next_state
+
+    def select_action(self, logits):
+        dist = torch.distributions.Categorical(logits=logits)
+        action = dist.sample()
+        return action
 
     def before_infer_hook(self):
         self.model.eval()
