@@ -1,12 +1,11 @@
+from inferer import BaseInferer
+from trainer import BaseTrainer
 import logging
 
 import torch
 import torch.nn as nn
 
 logger = logging.getLogger(__name__)
-
-from trainer import BaseTrainer
-from inferer import BaseInferer
 
 
 class PolicyNetwork(nn.Module):
@@ -17,7 +16,7 @@ class PolicyNetwork(nn.Module):
         self.fc2 = nn.Linear(hidden_dim, hidden_dim)
         self.fc3 = nn.Linear(hidden_dim, action_dim)
         self.init_weights()
-    
+
     def init_weights(self):
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -36,12 +35,12 @@ class PGTrainer(BaseTrainer):
     def __init__(self, running_reward=10, **kwargs):
         super().__init__(**kwargs)
         self.running_reward = running_reward
-        
+
     def init_model(self):
         state_dim = self.env.observation_space.shape[0]
         action_dim = self.env.action_space.n
         self.model = PolicyNetwork(state_dim, 128, action_dim)
-        
+
     def train_one_episode(self):
         state, _ = self.env.reset()
         done = False
@@ -81,25 +80,28 @@ class PGTrainer(BaseTrainer):
         self.optimizer.step()
 
         return {'loss': loss.item(), 'reward': sum(rewards), 'running_reward': self.running_reward}
-    
+
     def after_train_one_episode_hook(self, module_outputs):
         super().after_train_one_episode_hook(module_outputs)
-        self.running_reward = 0.99 * self.running_reward + module_outputs['reward'] * 0.01
+        self.running_reward = 0.99 * self.running_reward + \
+            module_outputs['reward'] * 0.01
         if self.running_reward > self.env.spec.reward_threshold:
-            logger.info(f'Solved!, running reward is {self.running_reward} at step {self.episode}')
+            logger.info(
+                f'Solved!, running reward is {self.running_reward} at step {self.episode}')
             return True
         return False
-    
-    
+
+
 class PGInferer(BaseInferer):
     def init_model(self):
         state_dim = self.env.observation_space.shape[0]
         action_dim = self.env.action_space.n
         self.model = PolicyNetwork(state_dim, 128, action_dim)
-    
-    
+
+
 def get_pg_trainer(env, run_dir, **kwargs):
     return PGTrainer(env=env, run_dir=run_dir, **kwargs)
+
 
 def get_pg_inferer(env, ckpt_path, **kwargs):
     return PGInferer(env=env, ckpt_path=ckpt_path, **kwargs)

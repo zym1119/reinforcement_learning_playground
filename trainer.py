@@ -28,8 +28,8 @@ class BaseTrainer(nn.Module):
     def train(self):
         self.before_train_hook()
 
-        infinite_iterator = self.num_episodes <= 0
-        if infinite_iterator:
+        infinite_training = self.num_episodes <= 0
+        if infinite_training:
             iterator = count(1)
         else:
             iterator = range(self.num_episodes)
@@ -62,10 +62,12 @@ class BaseTrainer(nn.Module):
 
     def before_train_one_episode_hook(self):
         """Hook for before train one episode."""
-        self.episode += 1
+        pass
 
     def after_train_one_episode_hook(self, module_outputs):
         """Hook of after train one episode, usually log and save."""
+        self.episode += 1
+
         self.log_model_outputs(self.episode, module_outputs)
 
         # save model if necessary
