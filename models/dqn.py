@@ -4,9 +4,8 @@ import random
 
 import torch
 import torch.nn as nn
-import numpy as np
 
-from trainer import BaseTrainer
+from runner import BaseTrainer, BaseInferer
 
 
 logger = logging.getLogger(__name__)
@@ -169,5 +168,17 @@ class DQNTrainer(BaseTrainer):
         logger.info(f'save ckpt {save_path}')
 
 
+class DQNInferer(BaseInferer):
+    def init_model(self, ckpt_path):
+        state_dim = self.env.observation_space.shape[0]
+        action_dim = self.env.action_space.n
+        self.model = DQN(state_dim, 128, action_dim)
+        self.model.load_state_dict(torch.load(ckpt_path))
+        
+
 def get_dqn_trainer(env, run_dir, **kwargs):
     return DQNTrainer(env, run_dir, **kwargs)
+
+
+def get_dqn_inferer(env, ckpt_path, **kwargs):
+    return DQNInferer(env, ckpt_path, **kwargs)

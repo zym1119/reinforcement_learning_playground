@@ -1,7 +1,6 @@
 import argparse
 from pathlib import Path
 
-import torch
 from utils import get_inferer
 
 import gym
@@ -11,7 +10,7 @@ def parse_args():
     parser = argparse.ArgumentParser('Reinforcement Learning test script')
     parser.add_argument('--env', type=str, default='CartPole-v1')
     parser.add_argument('--model', type=str, default='PolicyGradient',
-                        choices=['PolicyGradient'], help='model type')
+                        choices=['PolicyGradient', 'DQN'], help='model type')
     parser.add_argument('--run-name', '-n', type=str,
                         help='experiment run name')
     parser.add_argument('--root-dir', '-r', type=str,

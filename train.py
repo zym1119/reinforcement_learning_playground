@@ -12,7 +12,7 @@ def parse_args():
                         choices=['PolicyGradient', 'DQN'], help='model type')
     parser.add_argument('--seed', type=int, default=666, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
-    parser.add_argument('--steps', type=int, default=1000,
+    parser.add_argument('--episodes', type=int, default=1000,
                         help='training steps')
     parser.add_argument('--log-interval', type=int,
                         default=10, help='log interval')
@@ -37,7 +37,7 @@ if __name__ == '__main__':
     # set up env & model & optimzier
     env = gym.make(args.env)
     trainer = get_trainer(args.model, env, run_dir, lr=args.lr, log_interval=args.log_interval,
-                          save_interval=args.save_interval, max_episode_steps=args.max_episode_steps, steps=args.steps)
+                          save_interval=args.save_interval, max_episode_steps=args.max_episode_steps, num_episodes=args.episodes)
 
     # train
     trainer.train()

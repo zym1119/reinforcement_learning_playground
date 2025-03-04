@@ -56,6 +56,9 @@ def get_inferer(model_type, env, ckpt_path, **kwargs):
     if model_type == 'PolicyGradient':
         from models.policy_gradient import get_pg_inferer
         inferer = get_pg_inferer(env, ckpt_path, **kwargs)
+    elif model_type == 'DQN':
+        from models.dqn import get_dqn_inferer
+        inferer = get_dqn_inferer(env, ckpt_path, **kwargs)
     else:
         raise NotImplementedError
     return inferer

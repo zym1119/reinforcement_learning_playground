@@ -1,5 +1,4 @@
-from inferer import BaseInferer
-from trainer import BaseTrainer
+from runner import BaseTrainer, BaseInferer
 import logging
 
 import torch
@@ -93,10 +92,11 @@ class PGTrainer(BaseTrainer):
 
 
 class PGInferer(BaseInferer):
-    def init_model(self):
+    def init_model(self, ckpt_path):
         state_dim = self.env.observation_space.shape[0]
         action_dim = self.env.action_space.n
         self.model = PolicyNetwork(state_dim, 128, action_dim)
+        self.model.load_state_dict(torch.load(ckpt_path))
 
 
 def get_pg_trainer(env, run_dir, **kwargs):
