@@ -73,7 +73,6 @@ class DQNTrainer(BaseTrainer):
         state, _ = self.env.reset()
         done = False
         total_reward = 0
-        gamma = 0.99  # a constant
         loss = torch.tensor(0.0)
 
         while not done:
@@ -85,36 +84,46 @@ class DQNTrainer(BaseTrainer):
             total_reward += reward
             # train batch
             if len(self.replay_buffer) >= self.batch_size:
-                # sample batch data
-                batch_state, batch_action, batch_reward, batch_next_state, batch_done = self.replay_buffer.sample(
-                    self.batch_size)
-                # to tensor
-                batch_state = torch.tensor(
-                    batch_state, dtype=torch.float32)  # [B, state_dim]
-                batch_action = torch.tensor(
-                    batch_action, dtype=torch.int64).unsqueeze(1)  # [B, action_dim]
-                batch_reward = torch.tensor(
-                    batch_reward, dtype=torch.float32).unsqueeze(1)  # [B, 1]
-                batch_next_state = torch.tensor(
-                    batch_next_state, dtype=torch.float32)  # [B, state_dim]
-                batch_done = torch.tensor(
-                    batch_done, dtype=torch.float32).unsqueeze(1)  # [B, 1]
+                loss = self.train_one_batch()
 
-                q_values = self.policy_network(
-                    batch_state).gather(1, batch_action)
-                next_q_values = self.target_network(
-                    batch_next_state).max(dim=1).values.unsqueeze(1)
+        return_dict = {'loss': loss.item(), 'reward': total_reward}
+        if self.infinite_training:
+            return_dict['running_reward'] = self.running_reward
+        return return_dict
+    
+    def train_one_batch(self):
+        gamma = 0.99  # a constant
 
-                expected_q_values = batch_reward + \
-                    gamma * next_q_values * (1 - batch_done)
+        # sample batch data
+        batch_state, batch_action, batch_reward, batch_next_state, batch_done = self.replay_buffer.sample(
+            self.batch_size)
+        # to tensor
+        batch_state = torch.tensor(
+            batch_state, dtype=torch.float32)  # [B, state_dim]
+        batch_action = torch.tensor(
+            batch_action, dtype=torch.int64).unsqueeze(1)  # [B, action_dim]
+        batch_reward = torch.tensor(
+            batch_reward, dtype=torch.float32).unsqueeze(1)  # [B, 1]
+        batch_next_state = torch.tensor(
+            batch_next_state, dtype=torch.float32)  # [B, state_dim]
+        batch_done = torch.tensor(
+            batch_done, dtype=torch.float32).unsqueeze(1)  # [B, 1]
 
-                loss = self.mse_loss(q_values, expected_q_values)
+        q_values = self.policy_network(
+            batch_state).gather(1, batch_action)
+        next_q_values = self.target_network(
+            batch_next_state).max(dim=1).values.unsqueeze(1)
 
-                self.optimizer.zero_grad()
-                loss.backward()
-                self.optimizer.step()
+        expected_q_values = batch_reward + \
+            gamma * next_q_values * (1 - batch_done)
 
-        return {'loss': loss.item(), 'reward': total_reward}
+        loss = self.mse_loss(q_values, expected_q_values)
+
+        self.optimizer.zero_grad()
+        loss.backward()
+        self.optimizer.step()
+
+        return loss
 
     def before_train_hook(self):
         self.optimizer = torch.optim.Adam(
@@ -129,8 +138,8 @@ class DQNTrainer(BaseTrainer):
 
         # update epsilon setting
         epsilon_start = 1.0
-        epsilon_end = 0.995
-        epsilon_decay = 0.01
+        epsilon_end = 0.01
+        epsilon_decay = 0.995
 
         if self.episode == 0:
             self.epsilon = epsilon_start

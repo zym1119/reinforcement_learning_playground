@@ -41,4 +41,4 @@ python test.py --model {model_type} -c {ckpt path}
 # Implement your own method
 
 1. Define you model in `models` folder
-2. Implement your own Trainer and Inferer based on BaseTrainer or BaseInferer
+2. Implement your own Trainer and Inferer based on `BaseTrainer` or `BaseInferer` defined in `runner.py`

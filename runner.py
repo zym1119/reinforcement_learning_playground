@@ -21,6 +21,7 @@ class BaseTrainer(nn.Module):
         self.init_model()
 
         self.episode = 0
+        self.running_reward = 0
 
     def init_model(self):
         raise NotImplementedError
@@ -28,7 +29,7 @@ class BaseTrainer(nn.Module):
     def train(self):
         self.before_train_hook()
 
-        infinite_training = self.num_episodes <= 0
+        infinite_training = 
         if infinite_training:
             iterator = count(1)
         else:
@@ -73,6 +74,16 @@ class BaseTrainer(nn.Module):
         # save model if necessary
         if self.episode % self.save_interval == 0:
             self.save_model()
+        
+        # infinite training loop stop condition
+        if self.num_episodes <= 0:
+            self.running_reward = 0.99 * self.running_reward + \
+                module_outputs['reward'] * 0.01
+            if self.running_reward > self.env.spec.reward_threshold:
+                logger.info(
+                    f'Solved!, running reward is {self.running_reward} at step {self.episode}')
+                return True
+        return False
 
     def train_break_hook(self):
         logger.info(f'train break at episode {self.episode}')
@@ -90,7 +101,10 @@ class BaseTrainer(nn.Module):
             log_str = f'Episode {episode}: {", ".join(info_list)}'
             logger.info(log_str)
 
-
+    @property
+    def infinite_training(self):
+        return self.num_episodes <= 0
+    
 class BaseInferer(nn.Module):
     def __init__(self, env, ckpt_path, steps=1000):
         super().__init__()

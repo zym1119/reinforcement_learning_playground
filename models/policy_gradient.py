@@ -31,10 +31,6 @@ class PolicyNetwork(nn.Module):
 
 
 class PGTrainer(BaseTrainer):
-    def __init__(self, running_reward=10, **kwargs):
-        super().__init__(**kwargs)
-        self.running_reward = running_reward
-
     def init_model(self):
         state_dim = self.env.observation_space.shape[0]
         action_dim = self.env.action_space.n
@@ -79,16 +75,6 @@ class PGTrainer(BaseTrainer):
         self.optimizer.step()
 
         return {'loss': loss.item(), 'reward': sum(rewards), 'running_reward': self.running_reward}
-
-    def after_train_one_episode_hook(self, module_outputs):
-        super().after_train_one_episode_hook(module_outputs)
-        self.running_reward = 0.99 * self.running_reward + \
-            module_outputs['reward'] * 0.01
-        if self.running_reward > self.env.spec.reward_threshold:
-            logger.info(
-                f'Solved!, running reward is {self.running_reward} at step {self.episode}')
-            return True
-        return False
 
 
 class PGInferer(BaseInferer):
