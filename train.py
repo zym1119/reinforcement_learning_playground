@@ -9,7 +9,7 @@ def parse_args():
     parser = argparse.ArgumentParser('Reinforcement Learning train script')
     parser.add_argument('--env', type=str, default='CartPole-v1')
     parser.add_argument('--model', type=str, default='PolicyGradient',
-                        choices=['PolicyGradient', 'DQN', 'DoubleDQN'], help='model type')
+                        choices=['PolicyGradient', 'DQN', 'DoubleDQN', 'ActorCritic'], help='model type')
     parser.add_argument('--seed', type=int, default=666, help='random seed')
     parser.add_argument('--lr', type=float, default=1e-2, help='learning rate')
     parser.add_argument('--episodes', type=int, default=1000,

@@ -173,6 +173,7 @@ class BaseTrainer(nn.Module):
         """
         return self.num_episodes <= 0
     
+    
 class BaseInferer(nn.Module):
     """
     推理器的基类，继承自 nn.Module。

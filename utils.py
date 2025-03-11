@@ -71,6 +71,9 @@ def get_trainer(model_type, env, run_dir, **kwargs):
     elif model_type == 'DoubleDQN':
         from models.double_dqn import get_double_dqn_trainer
         trainer = get_double_dqn_trainer(env, run_dir, **kwargs)
+    elif model_type == 'ActorCritic':
+        from models.actor_critic import get_a2c_trainer
+        trainer = get_a2c_trainer(env, run_dir, **kwargs)
     else:
         raise NotImplementedError
 
@@ -98,6 +101,9 @@ def get_inferer(model_type, env, ckpt_path, **kwargs):
     elif model_type == 'DoubleDQN':
         from models.double_dqn import get_double_dqn_inferer
         inferer = get_double_dqn_inferer(env, ckpt_path, **kwargs)
+    elif model_type == 'ActorCritic':
+        from models.actor_critic import get_a2c_inferer
+        inferer = get_a2c_inferer(env, ckpt_path, **kwargs)
     else:
         raise NotImplementedError
     return inferer
