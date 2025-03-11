@@ -1,4 +1,5 @@
 from runner import BaseTrainer, BaseInferer
+from utils import TRAINER, INFERER
 import logging
 
 import torch
@@ -30,6 +31,7 @@ class PolicyNetwork(nn.Module):
         return x
 
 
+@TRAINER.register('PolicyGradient')
 class PGTrainer(BaseTrainer):
     def init_model(self):
         state_dim = self.env.observation_space.shape[0]
@@ -77,17 +79,10 @@ class PGTrainer(BaseTrainer):
         return {'loss': loss.item(), 'reward': sum(rewards), 'running_reward': self.running_reward}
 
 
+@INFERER.register('PolicyGradient')
 class PGInferer(BaseInferer):
     def init_model(self, ckpt_path):
         state_dim = self.env.observation_space.shape[0]
         action_dim = self.env.action_space.n
         self.model = PolicyNetwork(state_dim, 128, action_dim)
         self.model.load_state_dict(torch.load(ckpt_path))
-
-
-def get_pg_trainer(env, run_dir, **kwargs):
-    return PGTrainer(env=env, run_dir=run_dir, **kwargs)
-
-
-def get_pg_inferer(env, ckpt_path, **kwargs):
-    return PGInferer(env=env, ckpt_path=ckpt_path, **kwargs)

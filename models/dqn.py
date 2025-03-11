@@ -6,14 +6,16 @@ import torch
 import torch.nn as nn
 
 from runner import BaseTrainer, BaseInferer
+from utils import TRAINER, INFERER
 
-# 获取当前模块的日志记录器
 logger = logging.getLogger(__name__)
+
 
 class DQN(nn.Module):
     """
     定义深度Q网络（DQN）模型，接受状态输入，输出各动作Q值
     """
+
     def __init__(self, state_dim, hidden_dim, action_dim):
         super().__init__()
         self.fc1 = nn.Linear(state_dim, hidden_dim)
@@ -36,8 +38,10 @@ class DQN(nn.Module):
         x = self.fc3(x)
         return x
 
+
 class ReplayBuffer:
     """经验回放缓冲区，存储和采样经验数据"""
+
     def __init__(self, capacity):
         self.buffer = deque(maxlen=capacity)
 
@@ -55,8 +59,11 @@ class ReplayBuffer:
         """返回缓冲区当前数据数量"""
         return len(self.buffer)
 
+
+@TRAINER.register('DQN')
 class DQNTrainer(BaseTrainer):
     """DQN训练器，包含训练逻辑"""
+
     def __init__(self, *args, buffer_size=1000, batch_size=64, num_episodes=500, target_update_interval=10, **kwargs):
         super().__init__(*args, **kwargs)
         self.replay_buffer = ReplayBuffer(capacity=buffer_size)
@@ -100,17 +107,22 @@ class DQNTrainer(BaseTrainer):
         """训练一个批量数据"""
         gamma = 0.99
 
-        batch_state, batch_action, batch_reward, batch_next_state, batch_done = self.replay_buffer.sample(self.batch_size)
+        batch_state, batch_action, batch_reward, batch_next_state, batch_done = self.replay_buffer.sample(
+            self.batch_size)
         batch_state = torch.tensor(batch_state, dtype=torch.float32)
-        batch_action = torch.tensor(batch_action, dtype=torch.int64).unsqueeze(1)
-        batch_reward = torch.tensor(batch_reward, dtype=torch.float32).unsqueeze(1)
+        batch_action = torch.tensor(
+            batch_action, dtype=torch.int64).unsqueeze(1)
+        batch_reward = torch.tensor(
+            batch_reward, dtype=torch.float32).unsqueeze(1)
         batch_next_state = torch.tensor(batch_next_state, dtype=torch.float32)
         batch_done = torch.tensor(batch_done, dtype=torch.float32).unsqueeze(1)
 
         q_values = self.policy_network(batch_state).gather(1, batch_action)
-        next_q_values = self.target_network(batch_next_state).max(dim=1).values.unsqueeze(1)
+        next_q_values = self.target_network(
+            batch_next_state).max(dim=1).values.unsqueeze(1)
 
-        expected_q_values = batch_reward + gamma * next_q_values * (1 - batch_done)
+        expected_q_values = batch_reward + \
+            gamma * next_q_values * (1 - batch_done)
         loss = self.mse_loss(q_values, expected_q_values)
 
         self.optimizer.zero_grad()
@@ -121,7 +133,8 @@ class DQNTrainer(BaseTrainer):
 
     def before_train_hook(self):
         """训练前初始化优化器等操作"""
-        self.optimizer = torch.optim.Adam(self.policy_network.parameters(), lr=self.lr)
+        self.optimizer = torch.optim.Adam(
+            self.policy_network.parameters(), lr=self.lr)
         self.policy_network.train()
         self.target_network.eval()
         logger.info('start training...')
@@ -167,8 +180,11 @@ class DQNTrainer(BaseTrainer):
         torch.save(self.policy_network.state_dict(), save_path)
         logger.info(f'save ckpt {save_path}')
 
+
+@INFERER.register('DQN', 'DoubleDQN')
 class DQNInferer(BaseInferer):
     """DQN推理器，包含推理逻辑"""
+
     def init_model(self, ckpt_path):
         """初始化模型并加载预训练参数"""
         state_dim = self.env.observation_space.shape[0]
@@ -180,11 +196,3 @@ class DQNInferer(BaseInferer):
         """根据模型输出选择动作"""
         action = logits.argmax(dim=-1)
         return action
-
-def get_dqn_trainer(env, run_dir, **kwargs):
-    """获取DQN训练器实例"""
-    return DQNTrainer(env, run_dir, **kwargs)
-
-def get_dqn_inferer(env, ckpt_path, **kwargs):
-    """获取DQN推理器实例"""
-    return DQNInferer(env, ckpt_path, **kwargs)

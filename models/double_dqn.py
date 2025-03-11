@@ -1,8 +1,10 @@
 import torch
 
 from models.dqn import DQNTrainer, DQNInferer
+from utils import TRAINER, INFERER
 
 
+@TRAINER.register('DoubleDQN')
 class DoubleDQNTrainer(DQNTrainer):
     def train_one_batch(self):
         gamma = 0.99  # a constant
@@ -25,7 +27,8 @@ class DoubleDQNTrainer(DQNTrainer):
         q_values = self.policy_network(
             state).gather(1, action)
         # double DQN implementation
-        next_action = self.policy_network(next_state).argmax(dim=1).unsqueeze(1) # [B, 1]
+        next_action = self.policy_network(
+            next_state).argmax(dim=1).unsqueeze(1)  # [B, 1]
         next_q_values = self.target_network(next_state).gather(1, next_action)
         # origin DQN implementation
         # next_q_values = self.target_network(
@@ -41,10 +44,3 @@ class DoubleDQNTrainer(DQNTrainer):
         self.optimizer.step()
 
         return loss
-    
-def get_double_dqn_trainer(env, run_dir, **kwargs):
-    return DoubleDQNTrainer(env, run_dir, **kwargs)
-
-
-def get_double_dqn_inferer(env, ckpt_path, **kwargs):
-    return DQNInferer(env, ckpt_path, **kwargs)

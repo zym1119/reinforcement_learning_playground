@@ -1,17 +1,14 @@
-# 导入 logging 模块，用于记录程序运行过程中的信息
 import logging
-# 导入 time 模块，用于获取当前时间
 import time
-# 从 pathlib 模块导入 Path 类，用于处理文件路径
 from pathlib import Path
-# 从 typing 模块导入 Optional 类型，用于指定参数可以为 None
 from typing import Optional
+from importlib import import_module
 
-# 导入 torch 深度学习库
 import torch
 
 # 获取当前模块的日志记录器
 logger = logging.getLogger(__name__)
+
 
 def prepare_run(run_name: Optional[str] = None, root_dir='./runs', seed=666):
     """
@@ -44,66 +41,62 @@ def prepare_run(run_name: Optional[str] = None, root_dir='./runs', seed=666):
     logger.info(f'Run name: {run_name}')
     logger.info(f'Run folder: {run_dir}')
 
+    # set seed
     torch.manual_seed(seed)
     torch.cuda.manual_seed(seed)
 
     return run_dir, logger
 
+
+class Registry:
+    """通用组件注册器"""
+
+    def __init__(self, name):
+        self._name = name
+        self._obj_map = {}
+
+    def register(self, *obj_name):
+        # 用作装饰器
+        def wrap(obj_cls):
+            if obj_name is None:
+                names = [obj_cls.__name__]
+            else:
+                names = list(obj_name)
+            for name in names:
+                if name in self._obj_map:
+                    raise KeyError(
+                        f'Duplicate key {name} in registry {self._name}')
+                self._obj_map[name] = obj_cls
+            return obj_cls
+
+        return wrap
+
+    def create(self, obj_name, **kwargs):
+        obj_cls = self._obj_map.get(obj_name)
+        if not obj_cls:
+            raise KeyError(
+                f"Object {obj_name} not found in registry {self._name}")
+        return obj_cls(**kwargs)
+
+    def get(self, obj_name):
+        return self._obj_map.get(obj_name)
+
+    @property
+    def models(self):
+        return list(self._obj_map.keys())
+
+
+TRAINER = Registry('trainer')
+INFERER = Registry('inferer')
+
+
 def get_trainer(model_type, env, run_dir, **kwargs):
-    """
-    根据模型类型获取相应的训练器。
+    # load registry
+    import_module('models')
+    return TRAINER.create(model_type, env=env, run_dir=run_dir, **kwargs)
 
-    参数:
-        model_type (str): 模型的类型，如 'PolicyGradient', 'DQN', 'DoubleDQN'。
-        env (object): 训练使用的环境。
-        run_dir (Path): 运行目录的路径对象。
-        **kwargs: 其他可选参数。
-
-    返回:
-        trainer (object): 相应的训练器对象。
-    """
-    if model_type == 'PolicyGradient':
-        from models.policy_gradient import get_pg_trainer
-        trainer = get_pg_trainer(env, run_dir, **kwargs)
-    elif model_type == 'DQN':
-        from models.dqn import get_dqn_trainer
-        trainer = get_dqn_trainer(env, run_dir, **kwargs)
-    elif model_type == 'DoubleDQN':
-        from models.double_dqn import get_double_dqn_trainer
-        trainer = get_double_dqn_trainer(env, run_dir, **kwargs)
-    elif model_type == 'ActorCritic':
-        from models.actor_critic import get_a2c_trainer
-        trainer = get_a2c_trainer(env, run_dir, **kwargs)
-    else:
-        raise NotImplementedError
-
-    return trainer
 
 def get_inferer(model_type, env, ckpt_path, **kwargs):
-    """
-    根据模型类型获取相应的推理器。
-
-    参数:
-        model_type (str): 模型的类型，如 'PolicyGradient', 'DQN', 'DoubleDQN'。
-        env (object): 推理使用的环境。
-        ckpt_path (str): 模型检查点的路径。
-        **kwargs: 其他可选参数。
-
-    返回:
-        inferer (object): 相应的推理器对象。
-    """
-    if model_type == 'PolicyGradient':
-        from models.policy_gradient import get_pg_inferer
-        inferer = get_pg_inferer(env, ckpt_path, **kwargs)
-    elif model_type == 'DQN':
-        from models.dqn import get_dqn_inferer
-        inferer = get_dqn_inferer(env, ckpt_path, **kwargs)
-    elif model_type == 'DoubleDQN':
-        from models.double_dqn import get_double_dqn_inferer
-        inferer = get_double_dqn_inferer(env, ckpt_path, **kwargs)
-    elif model_type == 'ActorCritic':
-        from models.actor_critic import get_a2c_inferer
-        inferer = get_a2c_inferer(env, ckpt_path, **kwargs)
-    else:
-        raise NotImplementedError
-    return inferer
+    # load registry
+    import_module('models')
+    return INFERER.create(model_type, env=env, ckpt_path=ckpt_path, **kwargs)

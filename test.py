@@ -1,7 +1,7 @@
 import argparse
 from pathlib import Path
 
-from utils import get_inferer
+from utils import get_inferer, INFERER
 
 import gym
 
@@ -9,8 +9,7 @@ import gym
 def parse_args():
     parser = argparse.ArgumentParser('Reinforcement Learning test script')
     parser.add_argument('--env', type=str, default='CartPole-v1')
-    parser.add_argument('--model', type=str, default='PolicyGradient',
-                        choices=['PolicyGradient', 'DQN', 'DoubleDQN', 'ActorCritic'], help='model type')
+    parser.add_argument('--model', type=str, default='PolicyGradient', help='model type')
     parser.add_argument('--run-name', '-n', type=str,
                         help='experiment run name')
     parser.add_argument('--root-dir', '-r', type=str,

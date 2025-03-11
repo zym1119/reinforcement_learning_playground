@@ -160,6 +160,8 @@ class BaseTrainer(nn.Module):
             info_list = []
             for k, v in model_outputs.items():
                 info_list.append(f'{k}: {v:.4f}')
+            if self.infinite_training:
+                info_list.append(f'running_reward: {self.running_reward:.4f}')
             log_str = f'Episode {episode}: {", ".join(info_list)}'
             logger.info(log_str)
 
