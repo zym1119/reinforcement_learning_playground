@@ -42,6 +42,8 @@ class BaseTrainer(nn.Module):
         self.episode = 0
         # 运行奖励，用于跟踪平均奖励
         self.running_reward = 0
+        # reward buffer used for visualize
+        self.reward_buffer = []
 
     def init_model(self):
         """

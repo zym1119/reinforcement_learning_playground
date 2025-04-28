@@ -1,7 +1,7 @@
 import torch
 
-from models.dqn import DQNTrainer, DQNInferer
-from utils import TRAINER, INFERER
+from models.dqn import DQNTrainer
+from utils import TRAINER
 
 
 @TRAINER.register('DoubleDQN')

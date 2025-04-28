@@ -1,4 +1,3 @@
-from collections import deque
 import logging
 import random
 
@@ -7,6 +6,7 @@ import torch.nn as nn
 
 from runner import BaseTrainer, BaseInferer
 from utils import TRAINER, INFERER
+from modules.replay_buffer import ReplayBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -37,27 +37,6 @@ class DQN(nn.Module):
         x = torch.relu(self.fc2(x))
         x = self.fc3(x)
         return x
-
-
-class ReplayBuffer:
-    """经验回放缓冲区，存储和采样经验数据"""
-
-    def __init__(self, capacity):
-        self.buffer = deque(maxlen=capacity)
-
-    def push(self, state, action, reward, next_state, done):
-        """添加一条经验数据"""
-        self.buffer.append((state, action, reward, next_state, done))
-
-    def sample(self, batch_size):
-        """随机采样一批经验数据"""
-        batch = random.sample(self.buffer, batch_size)
-        state, action, reward, next_state, done = zip(*batch)
-        return state, action, reward, next_state, done
-
-    def __len__(self):
-        """返回缓冲区当前数据数量"""
-        return len(self.buffer)
 
 
 @TRAINER.register('DQN')
