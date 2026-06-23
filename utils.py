@@ -138,10 +138,11 @@ class Logger:
         ch.setFormatter(formatter)
         self._logger.addHandler(ch)
 
-        # TensorBoard
+        # TensorBoard（每次运行独立子目录，方便对比）
         try:
             from torch.utils.tensorboard import SummaryWriter
-            self.writer = SummaryWriter(log_dir=str(run_dir / 'tb_logs'))
+            tb_run_dir = run_dir / 'tb_logs' / time.strftime("%Y%m%d_%H%M%S")
+            self.writer = SummaryWriter(log_dir=str(tb_run_dir))
         except ImportError:
             self.writer = None
             self._logger.warning('TensorBoard not available, skipping.')

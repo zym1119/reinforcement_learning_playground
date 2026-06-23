@@ -12,5 +12,14 @@ save_interval: 200      # 每 200 个 episode 保存一次 checkpoint
 lr: 1e-2
 gamma: 0.99
 
+# 学习率调度器
+lr_scheduler:
+  type: StepLR
+  step_size: 300
+  gamma: 0.5
+
 # 网络
 hidden_dims: [128, 128]
+
+evaluation:
+  total_episodes: 10

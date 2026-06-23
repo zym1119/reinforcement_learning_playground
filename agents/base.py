@@ -2,6 +2,7 @@ from abc import ABC, abstractmethod
 
 import gymnasium as gym
 import torch
+import numpy as np
 
 from utils import (
     Logger,
@@ -84,11 +85,13 @@ class BaseTrainer(ABC):
 
     def train(self):
         self.before_train()
+        self._init_scheduler()
         while self._counter < self._target:
             collect_info = self.collect()
             self.steps += collect_info.get('n_steps', 1)
             self.episodes += 1
             train_info = self.update()
+            self._step_scheduler()
             self.after_update(collect_info, train_info)
         self.after_train()
 
@@ -116,9 +119,14 @@ class BaseTrainer(ABC):
             if 'episode_reward' in collect_info:
                 self.logger.log_scalar(
                     'train/episode_reward', collect_info['episode_reward'], counter)
+            # 记录当前 lr
+            lr = self.get_current_lr()
+            if lr is not None:
+                self.logger.log_scalar('train/lr', lr, counter)
             info_str = ', '.join(f'{k}: {v:.4f}' for k, v in train_info.items())
             reward_str = f", reward: {collect_info.get('episode_reward', 'N/A')}"
-            self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] {info_str}{reward_str}')
+            lr_str = f"lr: {lr:.6f}, " if lr is not None else ""
+            self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] {lr_str}{info_str}{reward_str}')
 
         # Evaluation
         if counter % self.config.get('eval_interval', 50) == 0:
@@ -143,6 +151,41 @@ class BaseTrainer(ABC):
         self.eval_env.close()
 
     # ==================== 工具方法 ====================
+
+    def _init_scheduler(self):
+        """根据 config 初始化 lr scheduler"""
+        self.scheduler = None
+        sched_cfg = self.config.get('lr_scheduler')
+        if not sched_cfg or not hasattr(self, 'optimizer'):
+            return
+        sched_type = sched_cfg.get('type', 'StepLR')
+        if sched_type == 'StepLR':
+            self.scheduler = torch.optim.lr_scheduler.StepLR(
+                self.optimizer,
+                step_size=sched_cfg.get('step_size', 200),
+                gamma=sched_cfg.get('gamma', 0.9),
+            )
+        elif sched_type == 'ExponentialLR':
+            self.scheduler = torch.optim.lr_scheduler.ExponentialLR(
+                self.optimizer,
+                gamma=sched_cfg.get('gamma', 0.99),
+            )
+        elif sched_type == 'CosineAnnealingLR':
+            self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
+                self.optimizer,
+                T_max=sched_cfg.get('T_max', self._target),
+            )
+
+    def _step_scheduler(self):
+        """每次 update 后调用 scheduler.step()"""
+        if self.scheduler is not None:
+            self.scheduler.step()
+
+    def get_current_lr(self):
+        """获取当前学习率，子类如有多个 optimizer 可 override"""
+        if hasattr(self, 'optimizer'):
+            return self.optimizer.param_groups[0]['lr']
+        return None
 
     def evaluate(self, n_episodes: int = 10) -> float:
         """用 eval_env 评估当前策略，返回平均 reward"""
@@ -180,17 +223,37 @@ class BaseInferer(ABC):
     def __init__(self, config: dict):
         self.config = config
         self.device = get_device(config.get('device', 'auto'))
+
+        eval_cfg = config.get('evaluation', {})
+        # 视频录制需要 rgb_array
+        self.dump_video = eval_cfg.get('dump_video', False)
+        render_mode = 'rgb_array' if self.dump_video else eval_cfg.get('render_mode', 'rgb_array')
+
         self.env = gym.make(
             config['env'],
-            render_mode='human',
+            render_mode=render_mode,
             **config.get('env_kwargs', {}),
         )
-        self.steps = config.get('eval_steps', 1000)
+
+        # 支持 episode-based 或 step-based
+        self.total_episodes = eval_cfg.get('total_episodes')
+        self.total_steps = eval_cfg.get('total_steps')
+        if not self.total_episodes and not self.total_steps:
+            self.total_episodes = 10
+
+        self.video_fps = eval_cfg.get('video_fps', 30)
+
+        # work_dir 逻辑与 train 一致
+        self.run_dir = setup_run_dir(config)
 
         ckpt_path = config.get('ckpt_path')
         if not ckpt_path:
             raise ValueError("config must contain 'ckpt_path' for inference")
         self.init_model(ckpt_path)
+
+    @property
+    def episode_based(self) -> bool:
+        return self.total_episodes is not None
 
     @abstractmethod
     def init_model(self, ckpt_path: str):
@@ -203,15 +266,92 @@ class BaseInferer(ABC):
         ...
 
     def run(self):
-        """推理主循环"""
+        """推理主循环：支持 episode-based 和 step-based，可选视频录制"""
+
         obs, _ = self.env.reset()
         total_reward = 0.0
-        for step in range(self.steps):
+        episode_rewards = []
+        step = 0
+        ep_step = 0
+        frames = []
+
+        while True:
+            # 录制帧
+            if self.dump_video:
+                frame = self.env.render()
+                frame = self._overlay_text(frame, len(episode_rewards) + 1, ep_step + 1)
+                frames.append(frame)
+
             action = self.predict(obs, deterministic=True)
             obs, reward, terminated, truncated, _ = self.env.step(action)
             total_reward += reward
+            step += 1
+            ep_step += 1
+
             if terminated or truncated:
-                print(f'Episode ended at step {step + 1}, reward: {total_reward:.2f}')
+                episode_rewards.append(total_reward)
+                print(f'Episode {len(episode_rewards)} ended at step {step}, '
+                      f'ep_steps: {ep_step}, reward: {total_reward:.2f}')
                 obs, _ = self.env.reset()
                 total_reward = 0.0
+                ep_step = 0
+
+            # 终止条件
+            if self.episode_based:
+                if len(episode_rewards) >= self.total_episodes:
+                    break
+            else:
+                if step >= self.total_steps:
+                    break
+
         self.env.close()
+
+        # 汇总
+        if episode_rewards:
+            avg = sum(episode_rewards) / len(episode_rewards)
+            print(f'\nSummary: {len(episode_rewards)} episodes, {step} steps, avg reward: {avg:.2f}')
+
+        # 保存视频
+        if self.dump_video and frames:
+            self._save_video(frames)
+
+    def _overlay_text(self, frame, episode: int, ep_step: int):
+        """在帧上叠加 episode 和 step 文字"""
+        import cv2
+        import numpy as np
+
+        frame = np.ascontiguousarray(frame, dtype=np.uint8)
+        h, w = frame.shape[:2]
+
+        font = cv2.FONT_HERSHEY_SIMPLEX
+        font_scale = 0.5
+        thickness = 1
+        color = (255, 255, 255)
+        bg_color = (0, 0, 0)
+
+        # 左上角: episode
+        ep_text = f'episode: {episode}'
+        (tw, th), _ = cv2.getTextSize(ep_text, font, font_scale, thickness)
+        cv2.rectangle(frame, (5, 5), (10 + tw, 12 + th), bg_color, -1)
+        cv2.putText(frame, ep_text, (7, 10 + th), font, font_scale, color, thickness)
+
+        # 右上角: step
+        step_text = f'step: {ep_step}'
+        (tw, th), _ = cv2.getTextSize(step_text, font, font_scale, thickness)
+        cv2.rectangle(frame, (w - 12 - tw, 5), (w - 5, 12 + th), bg_color, -1)
+        cv2.putText(frame, step_text, (w - 10 - tw, 10 + th), font, font_scale, color, thickness)
+
+        return frame
+
+    def _save_video(self, frames):
+        """保存视频到 work_dir"""
+        import imageio
+
+        video_dir = self.run_dir / 'videos'
+        video_dir.mkdir(exist_ok=True)
+
+        import time
+        filename = time.strftime("%Y%m%d_%H%M%S") + '.mp4'
+        video_path = video_dir / filename
+        imageio.mimsave(str(video_path), frames, fps=self.video_fps)
+        print(f'Video saved to: {video_path}')
