@@ -1,0 +1,4 @@
+_base_: _base_/pg.yaml
+
+env: CartPole-v1
+total_steps: 50000

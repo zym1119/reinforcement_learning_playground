@@ -30,7 +30,8 @@ class BaseTrainer(ABC):
         self.eval_env = gym.make(config['env'], **config.get('env_kwargs', {}))
 
         # 训练状态
-        self.total_steps = 0
+        self.steps = 0
+        self.episodes = 0
         self.best_eval_reward = -float('inf')
 
         # 由子类实现
@@ -64,11 +65,29 @@ class BaseTrainer(ABC):
 
     # ==================== 训练主循环 ====================
 
+    @property
+    def episode_based(self) -> bool:
+        """判断训练模式：config 中有 total_episodes 且大于 0 则为 episode-based"""
+        return 'total_episodes' in self.config and self.config['total_episodes'] > 0
+
+    @property
+    def _counter(self) -> int:
+        """当前进度计数（episode 或 step）"""
+        return self.episodes if self.episode_based else self.steps
+
+    @property
+    def _target(self) -> int:
+        """目标计数"""
+        if self.episode_based:
+            return self.config['total_episodes']
+        return self.config['total_steps']
+
     def train(self):
         self.before_train()
-        while self.total_steps < self.config['total_steps']:
+        while self._counter < self._target:
             collect_info = self.collect()
-            self.total_steps += collect_info['n_steps']
+            self.steps += collect_info.get('n_steps', 1)
+            self.episodes += 1
             train_info = self.update()
             self.after_update(collect_info, train_info)
         self.after_train()
@@ -82,36 +101,37 @@ class BaseTrainer(ABC):
         self.logger.info(f'Algorithm: {self.config["algorithm"]}')
         self.logger.info(f'Env: {self.config["env"]}')
         self.logger.info(f'Device: {self.device}')
+        mode = 'episode-based' if self.episode_based else 'step-based'
+        self.logger.info(f'Mode: {mode}, target: {self._target}')
         self.logger.info(f'Run dir: {self.run_dir}')
 
     def after_update(self, collect_info: dict, train_info: dict):
         """每次 update 后：logging + eval + checkpoint"""
-        n_steps = self.config.get('n_steps', 1)
-        total = self.total_steps
+        counter = self._counter
 
         # Logging
-        if total % self.config.get('log_interval', 1000) < n_steps:
+        if counter % self.config.get('log_interval', 10) == 0:
             for k, v in train_info.items():
-                self.logger.log_scalar(f'train/{k}', v, total)
+                self.logger.log_scalar(f'train/{k}', v, counter)
             if 'episode_reward' in collect_info:
                 self.logger.log_scalar(
-                    'train/episode_reward', collect_info['episode_reward'], total)
+                    'train/episode_reward', collect_info['episode_reward'], counter)
             info_str = ', '.join(f'{k}: {v:.4f}' for k, v in train_info.items())
             reward_str = f", reward: {collect_info.get('episode_reward', 'N/A')}"
-            self.logger.info(f'[Step {total}] {info_str}{reward_str}')
+            self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] {info_str}{reward_str}')
 
         # Evaluation
-        if total % self.config.get('eval_interval', 10000) < n_steps:
+        if counter % self.config.get('eval_interval', 50) == 0:
             eval_reward = self.evaluate()
-            self.logger.log_scalar('eval/reward', eval_reward, total)
-            self.logger.info(f'[Step {total}] eval_reward: {eval_reward:.2f}')
+            self.logger.log_scalar('eval/reward', eval_reward, counter)
+            self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] eval_reward: {eval_reward:.2f}')
             if eval_reward > self.best_eval_reward:
                 self.best_eval_reward = eval_reward
                 self.save_checkpoint('model_best.pth')
 
         # Periodic checkpoint
-        if total % self.config.get('save_interval', 20000) < n_steps:
-            self.save_checkpoint(f'model_{total}.pth')
+        if counter % self.config.get('save_interval', 100) == 0:
+            self.save_checkpoint(f'model_ep{self.episodes}.pth')
 
     def after_train(self):
         """训练结束：保存最终模型、关闭资源"""

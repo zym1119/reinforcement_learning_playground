@@ -1,4 +1,3 @@
-import argparse
 import logging
 import random
 import time
@@ -36,24 +35,38 @@ def load_yaml(path: Union[str, Path]) -> dict:
         base_config = load_yaml(base_path)
         config = deep_merge(base_config, config)
 
+    _auto_cast_numbers(config)
     return config
 
 
-def load_config() -> dict:
-    """从命令行加载配置：--config 指定 YAML，--overrides 覆盖参数"""
-    parser = argparse.ArgumentParser()
-    parser.add_argument('--config', '-c', type=str, required=True,
-                        help='path to config yaml file')
-    parser.add_argument('--overrides', nargs='+', default=[],
-                        help='key=value pairs, e.g. lr=1e-4 seed=123')
-    args = parser.parse_args()
+def _auto_cast_numbers(d: dict):
+    """将 YAML 中未被正确解析的数字字符串（如 '1e-2'）转为 float/int"""
+    for k, v in d.items():
+        if isinstance(v, dict):
+            _auto_cast_numbers(v)
+        elif isinstance(v, str):
+            try:
+                d[k] = int(v)
+            except ValueError:
+                try:
+                    d[k] = float(v)
+                except ValueError:
+                    pass
 
-    config = load_yaml(args.config)
 
-    # CLI overrides
-    for item in args.overrides:
-        k, v = item.split('=', 1)
-        config[k] = yaml.safe_load(v)
+def load_config(config_path, overrides=None, exp_name=None) -> dict:
+    """加载配置文件并应用覆盖参数"""
+    config = load_yaml(config_path)
+
+    # overrides
+    if overrides:
+        for item in overrides:
+            k, v = item.split('=', 1)
+            config[k] = yaml.safe_load(v)
+
+    # exp_name has highest priority
+    if exp_name:
+        config['exp_name'] = exp_name
 
     return config
 
@@ -83,7 +96,8 @@ def setup_run_dir(config: dict) -> Path:
     algo = config['algorithm']
     timestamp = time.strftime("%Y%m%d-%H%M%S")
 
-    run_name = config.get('run_name') or f"{algo}_{env_name}_{timestamp}"
+    # exp_name 优先级: CLI --exp-name > config exp_name > 自动生成
+    run_name = config.get('exp_name') or f"{algo}_{env_name}_{timestamp}"
     root = Path(config.get('work_dir', './work_dirs'))
     run_dir = root / run_name
 
@@ -113,7 +127,8 @@ class Logger:
 
         formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-        fh = logging.FileHandler(run_dir / 'logs' / 'train.log')
+        log_filename = time.strftime("%Y%m%d_%H%M") + '.log'
+        fh = logging.FileHandler(run_dir / 'logs' / log_filename)
         fh.setLevel(logging.INFO)
         fh.setFormatter(formatter)
         self._logger.addHandler(fh)

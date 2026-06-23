@@ -1,0 +1,16 @@
+_base_: default.yaml
+
+algorithm: PolicyGradient
+
+# 训练控制（episode-based）
+total_episodes: 1000
+log_interval: 10        # 每 10 个 episode 打印一次日志
+eval_interval: 100       # 每 100 个 episode 评估一次
+save_interval: 200      # 每 200 个 episode 保存一次 checkpoint
+
+# 超参
+lr: 1e-2
+gamma: 0.99
+
+# 网络
+hidden_dims: [128, 128]

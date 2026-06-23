@@ -36,6 +36,7 @@ def main():
     frames = [env.render()]
     total_reward = 0.0
     episode = 1
+    episode_rewards = []
 
     for step in range(args.steps):
         action = env.action_space.sample()
@@ -45,16 +46,22 @@ def main():
 
         if terminated or truncated:
             print(f'Episode {episode} ended at step {step + 1}, reward: {total_reward:.2f}')
+            episode_rewards.append(total_reward)
             obs, _ = env.reset()
             total_reward = 0.0
             episode += 1
 
     env.close()
 
+    # 统计
+    if episode_rewards:
+        avg_reward = sum(episode_rewards) / len(episode_rewards)
+        print(f'\nAverage reward over {len(episode_rewards)} episodes: {avg_reward:.2f}')
+
     # 保存为单个 mp4
     import imageio
     imageio.mimsave(output_path, frames, fps=args.fps)
-    print(f'\nDone. {episode - 1} episodes, {len(frames)} frames saved to: {os.path.abspath(output_path)}')
+    print(f'Done. {len(episode_rewards)} episodes, {len(frames)} frames saved to: {os.path.abspath(output_path)}')
 
 
 if __name__ == '__main__':
