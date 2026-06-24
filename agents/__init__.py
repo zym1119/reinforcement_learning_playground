@@ -1,1 +1,1 @@
-from agents.policy_gradient import PGTrainer, PGInferer  # noqa: F401
+from agents.policy_gradient import PGAgent  # noqa: F401

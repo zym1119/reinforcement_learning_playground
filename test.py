@@ -1,6 +1,6 @@
 import argparse
 
-from utils import load_config, create_inferer
+from utils import load_config, create_agent
 
 
 def parse_args():
@@ -20,8 +20,8 @@ def main():
     args = parse_args()
     config = load_config(args.config, overrides=args.overrides, exp_name=args.exp_name)
     config['ckpt_path'] = args.ckpt
-    inferer = create_inferer(config)
-    inferer.run()
+    agent = create_agent(config, mode='eval')
+    agent.run()
 
 
 if __name__ == '__main__':

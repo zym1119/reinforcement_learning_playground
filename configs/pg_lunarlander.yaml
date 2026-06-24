@@ -1,0 +1,6 @@
+_base_: _base_/pg.yaml
+
+env: LunarLander-v3
+total_episodes: 1000
+lr: 1e-3
+hidden_dims: [256, 256]

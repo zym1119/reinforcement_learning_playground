@@ -12,31 +12,60 @@ from utils import (
 )
 
 
-class BaseTrainer(ABC):
+class BaseAgent(ABC):
     """
-    训练器基类。子类只需实现 4 个方法：
+    RL Agent 基类，统一训练与推理。子类需实现 4 个方法：
     - init_model(): 初始化网络、优化器
     - collect() -> dict: 与环境交互采集数据
     - update() -> dict: 执行梯度更新
     - predict(obs, deterministic) -> action: 根据观测选动作
     """
 
-    def __init__(self, config: dict):
+    def __init__(self, config: dict, mode: str = 'train'):
+        """
+        Args:
+            config: 配置字典
+            mode: 'train' 或 'eval'
+        """
         self.config = config
+        self.mode = mode
         self.device = get_device(config.get('device', 'auto'))
         set_seed(config.get('seed', 42))
 
         # 环境
-        self.env = gym.make(config['env'], **config.get('env_kwargs', {}))
-        self.eval_env = gym.make(config['env'], **config.get('env_kwargs', {}))
+        if mode == 'train':
+            self.env = gym.make(config['env'], **config.get('env_kwargs', {}))
+            self.eval_env = gym.make(config['env'], **config.get('env_kwargs', {}))
+        else:
+            eval_cfg = config.get('evaluation', {})
+            self.dump_video = eval_cfg.get('dump_video', False)
+            render_mode = 'rgb_array' if self.dump_video else eval_cfg.get('render_mode', 'rgb_array')
+            self.env = gym.make(
+                config['env'],
+                render_mode=render_mode,
+                **config.get('env_kwargs', {}),
+            )
+            # eval 模式下的 episode/step 限制
+            self.total_episodes = eval_cfg.get('total_episodes')
+            self.total_steps = eval_cfg.get('total_steps')
+            if not self.total_episodes and not self.total_steps:
+                self.total_episodes = 10
+            self.video_fps = eval_cfg.get('video_fps', 30)
 
         # 训练状态
         self.steps = 0
         self.episodes = 0
         self.best_eval_reward = -float('inf')
 
-        # 由子类实现
+        # 初始化模型
         self.init_model()
+
+        # eval 模式加载 checkpoint
+        if mode == 'eval':
+            ckpt_path = config.get('ckpt_path')
+            if not ckpt_path:
+                raise ValueError("config must contain 'ckpt_path' for eval mode")
+            self.load_checkpoint(ckpt_path)
 
     # ==================== 子类必须实现 ====================
 
@@ -95,7 +124,7 @@ class BaseTrainer(ABC):
             self.after_update(collect_info, train_info)
         self.after_train()
 
-    # ==================== Hooks ====================
+    # ==================== Training Hooks ====================
 
     def before_train(self):
         """训练前：建目录、初始化 logger"""
@@ -208,65 +237,20 @@ class BaseTrainer(ABC):
         torch.save(self.get_state_dict(), path)
         self.logger.info(f'Saved: {path}')
 
+    def load_checkpoint(self, ckpt_path: str):
+        """加载 checkpoint，子类可 override 以支持多网络"""
+        state_dict = torch.load(ckpt_path, map_location=self.device)
+        self.policy.load_state_dict(state_dict)
+
     def get_state_dict(self) -> dict:
         """获取需要保存的状态字典，子类可 override 以支持多网络"""
-        return self.model.state_dict()
+        return self.policy.state_dict()
 
-
-class BaseInferer(ABC):
-    """
-    推理器基类。子类需实现：
-    - init_model(ckpt_path): 初始化网络并加载权重
-    - predict(obs, deterministic) -> action
-    """
-
-    def __init__(self, config: dict):
-        self.config = config
-        self.device = get_device(config.get('device', 'auto'))
-
-        eval_cfg = config.get('evaluation', {})
-        # 视频录制需要 rgb_array
-        self.dump_video = eval_cfg.get('dump_video', False)
-        render_mode = 'rgb_array' if self.dump_video else eval_cfg.get('render_mode', 'rgb_array')
-
-        self.env = gym.make(
-            config['env'],
-            render_mode=render_mode,
-            **config.get('env_kwargs', {}),
-        )
-
-        # 支持 episode-based 或 step-based
-        self.total_episodes = eval_cfg.get('total_episodes')
-        self.total_steps = eval_cfg.get('total_steps')
-        if not self.total_episodes and not self.total_steps:
-            self.total_episodes = 10
-
-        self.video_fps = eval_cfg.get('video_fps', 30)
-
-        # work_dir 逻辑与 train 一致
-        self.run_dir = setup_run_dir(config)
-
-        ckpt_path = config.get('ckpt_path')
-        if not ckpt_path:
-            raise ValueError("config must contain 'ckpt_path' for inference")
-        self.init_model(ckpt_path)
-
-    @property
-    def episode_based(self) -> bool:
-        return self.total_episodes is not None
-
-    @abstractmethod
-    def init_model(self, ckpt_path: str):
-        """初始化模型并加载 checkpoint"""
-        ...
-
-    @abstractmethod
-    def predict(self, obs, deterministic: bool = True):
-        """根据观测选择动作"""
-        ...
+    # ==================== 推理主循环 ====================
 
     def run(self):
         """推理主循环：支持 episode-based 和 step-based，可选视频录制"""
+        self.run_dir = setup_run_dir(self.config)
 
         obs, _ = self.env.reset()
         total_reward = 0.0
@@ -297,7 +281,7 @@ class BaseInferer(ABC):
                 ep_step = 0
 
             # 终止条件
-            if self.episode_based:
+            if self.total_episodes is not None:
                 if len(episode_rewards) >= self.total_episodes:
                     break
             else:
@@ -318,7 +302,6 @@ class BaseInferer(ABC):
     def _overlay_text(self, frame, episode: int, ep_step: int):
         """在帧上叠加 episode 和 step 文字"""
         import cv2
-        import numpy as np
 
         frame = np.ascontiguousarray(frame, dtype=np.uint8)
         h, w = frame.shape[:2]
@@ -346,11 +329,11 @@ class BaseInferer(ABC):
     def _save_video(self, frames):
         """保存视频到 work_dir"""
         import imageio
+        import time
 
         video_dir = self.run_dir / 'videos'
         video_dir.mkdir(exist_ok=True)
 
-        import time
         filename = time.strftime("%Y%m%d_%H%M%S") + '.mp4'
         video_path = video_dir / filename
         imageio.mimsave(str(video_path), frames, fps=self.video_fps)

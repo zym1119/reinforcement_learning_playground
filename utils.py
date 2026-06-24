@@ -197,19 +197,11 @@ class Registry:
         return list(self._obj_map.keys())
 
 
-TRAINER = Registry('trainer')
-INFERER = Registry('inferer')
+AGENT = Registry('agent')
 
 
-def create_trainer(config: dict):
-    """根据 config['algorithm'] 创建 Trainer 实例"""
+def create_agent(config: dict, mode: str = 'train'):
+    """根据 config['algorithm'] 创建 Agent 实例"""
     import agents  # noqa: F401
-    trainer_cls = TRAINER.get(config['algorithm'])
-    return trainer_cls(config)
-
-
-def create_inferer(config: dict):
-    """根据 config['algorithm'] 创建 Inferer 实例"""
-    import agents  # noqa: F401
-    inferer_cls = INFERER.get(config['algorithm'])
-    return inferer_cls(config)
+    agent_cls = AGENT.get(config['algorithm'])
+    return agent_cls(config, mode=mode)

@@ -1,6 +1,6 @@
 import argparse
 
-from utils import load_config, create_trainer
+from utils import load_config, create_agent
 
 
 def parse_args():
@@ -17,8 +17,8 @@ def parse_args():
 def main():
     args = parse_args()
     config = load_config(args.config, overrides=args.overrides, exp_name=args.exp_name)
-    trainer = create_trainer(config)
-    trainer.train()
+    agent = create_agent(config, mode='train')
+    agent.train()
 
 
 if __name__ == '__main__':

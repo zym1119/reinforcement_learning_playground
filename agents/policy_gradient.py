@@ -1,15 +1,15 @@
 import torch
 import torch.optim as optim
 
-from agents.base import BaseTrainer, BaseInferer
+from agents.base import BaseAgent
 from networks.mlp import build_mlp
 from networks.distributions import CategoricalDist
-from utils import TRAINER, INFERER
+from utils import AGENT
 
 
-@TRAINER.register('PolicyGradient')
-class PGTrainer(BaseTrainer):
-    """REINFORCE (vanilla Policy Gradient) 训练器"""
+@AGENT.register('PolicyGradient')
+class PGAgent(BaseAgent):
+    """REINFORCE (vanilla Policy Gradient)"""
 
     def init_model(self):
         obs_dim = self.env.observation_space.shape[0]
@@ -74,34 +74,6 @@ class PGTrainer(BaseTrainer):
         return {'loss': loss.item()}
 
     def predict(self, obs, deterministic=False):
-        obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device)
-        with torch.no_grad():
-            logits = self.policy(obs_t)
-        dist = CategoricalDist(logits)
-        if deterministic:
-            return dist.mode().item()
-        return dist.sample().item()
-
-    def get_state_dict(self):
-        return self.policy.state_dict()
-
-
-@INFERER.register('PolicyGradient')
-class PGInferer(BaseInferer):
-    """REINFORCE 推理器"""
-
-    def init_model(self, ckpt_path):
-        obs_dim = self.env.observation_space.shape[0]
-        act_dim = self.env.action_space.n
-
-        hidden_dims = self.config.get('hidden_dims', [128, 128])
-        activation = self.config.get('activation', 'relu')
-
-        self.policy = build_mlp(obs_dim, act_dim, hidden_dims, activation).to(self.device)
-        self.policy.load_state_dict(torch.load(ckpt_path, map_location=self.device))
-        self.policy.eval()
-
-    def predict(self, obs, deterministic=True):
         obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device)
         with torch.no_grad():
             logits = self.policy(obs_t)
