@@ -44,6 +44,9 @@ class ReplayBuffer:
 
     def __len__(self) -> int:
         return len(self.buffer)
+    
+    def __repr__(self):
+        return f"ReplayBuffer(size={len(self.buffer)})"
 
 
 class RolloutBuffer:

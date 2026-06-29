@@ -2,8 +2,8 @@ import torch
 import torch.optim as optim
 
 from agents.base import BaseAgent
-from networks.mlp import build_mlp
-from networks.distributions import CategoricalDist
+from blocks.mlp import build_mlp
+from blocks.distributions import CategoricalDist
 from utils import AGENT
 
 
@@ -47,7 +47,7 @@ class PGAgent(BaseAgent):
             done = terminated or truncated
             steps += 1
 
-        return {'n_steps': steps, 'episode_reward': sum(self._rewards)}
+        return {'n_steps': steps, 'n_episodes': 1, 'episode_reward': sum(self._rewards)}
 
     def update(self) -> dict:
         """REINFORCE 更新：用折扣回报加权 log_prob"""

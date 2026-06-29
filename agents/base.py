@@ -56,6 +56,7 @@ class BaseAgent(ABC):
         self.steps = 0
         self.episodes = 0
         self.best_eval_reward = -float('inf')
+        self._latest_episode_reward = None
 
         # 初始化模型
         self.init_model()
@@ -118,7 +119,9 @@ class BaseAgent(ABC):
         while self._counter < self._target:
             collect_info = self.collect()
             self.steps += collect_info.get('n_steps', 1)
-            self.episodes += 1
+            self.episodes += collect_info.get('n_episodes', 0)
+            if 'episode_reward' in collect_info:
+                self._latest_episode_reward = collect_info['episode_reward']
             train_info = self.update()
             self._step_scheduler()
             self.after_update(collect_info, train_info)
@@ -145,15 +148,16 @@ class BaseAgent(ABC):
         if counter % self.config.get('log_interval', 10) == 0:
             for k, v in train_info.items():
                 self.logger.log_scalar(f'train/{k}', v, counter)
-            if 'episode_reward' in collect_info:
+            if self._latest_episode_reward is not None:
                 self.logger.log_scalar(
-                    'train/episode_reward', collect_info['episode_reward'], counter)
+                    'train/episode_reward', self._latest_episode_reward, counter)
             # 记录当前 lr
             lr = self.get_current_lr()
             if lr is not None:
                 self.logger.log_scalar('train/lr', lr, counter)
             info_str = ', '.join(f'{k}: {v:.4f}' for k, v in train_info.items())
-            reward_str = f", reward: {collect_info.get('episode_reward', 'N/A')}"
+            reward_val = f"{self._latest_episode_reward:.2f}" if self._latest_episode_reward is not None else "N/A"
+            reward_str = f", reward: {reward_val}"
             lr_str = f"lr: {lr:.6f}, " if lr is not None else ""
             self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] {lr_str}{info_str}{reward_str}')
 
@@ -168,7 +172,10 @@ class BaseAgent(ABC):
 
         # Periodic checkpoint
         if counter % self.config.get('save_interval', 100) == 0:
-            self.save_checkpoint(f'model_ep{self.episodes}.pth')
+            if self.episode_based:
+                self.save_checkpoint(f'model_ep{self.episodes}.pth')
+            else:
+                self.save_checkpoint(f'model_step{self.steps}.pth')
 
     def after_train(self):
         """训练结束：保存最终模型、关闭资源"""
