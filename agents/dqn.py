@@ -141,3 +141,36 @@ class DQNAgent(BaseAgent):
         state_dict = torch.load(ckpt_path, map_location=self.device)
         self.q_net.load_state_dict(state_dict['q_net'])
         self.target_q_net.load_state_dict(state_dict['target_q_net'])
+
+
+@AGENT.register('DoubleDQN')
+class DoubleDQNAgent(DQNAgent):
+    def update(self) -> dict:
+        self.q_net.train()
+        batch = self.buffer.sample(self.batch_size, device=self.device)
+        q_values = self.q_net(batch['obs']).gather(1, batch['action'].unsqueeze(-1))
+        with torch.no_grad():
+            # Double DQN: 用 online network 选动作，用 target network 评估
+            next_actions = self.q_net(batch['next_obs']).argmax(dim=1).unsqueeze(1)
+            next_q_values = self.target_q_net(batch['next_obs']).gather(1, next_actions)
+            target_q_values = batch['reward'] + self.gamma * (1 - batch['done']) * next_q_values
+
+        loss = F.smooth_l1_loss(q_values, target_q_values)
+        self.optimizer.zero_grad()
+        loss.backward()
+        torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=10.0)
+        self.optimizer.step()
+
+        self.update_count += 1
+        if self.tau is not None:
+            for p_target, p_q in zip(self.target_q_net.parameters(), self.q_net.parameters()):
+                p_target.data.mul_(1 - self.tau).add_(self.tau * p_q.data)
+        elif self.update_count % self.target_update_freq == 0:
+            self.target_q_net.load_state_dict(self.q_net.state_dict())
+
+        self.epsilon = max(
+            self.epsilon_end,
+            self.epsilon_start - self.update_count * (self.epsilon_start - self.epsilon_end) / self.epsilon_decay_steps
+        )
+
+        return {'loss': loss.item(), 'epsilon': self.epsilon}
