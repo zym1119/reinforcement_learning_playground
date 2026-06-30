@@ -28,6 +28,7 @@ class DQNAgent(BaseAgent):
 
         self.buffer = ReplayBuffer(self.config.get('buffer_size', 10000))
         self.target_update_freq = self.config.get('target_update_freq', 100)
+        self.tau = self.config.get('tau', None)  # soft update 系数，设置后启用 soft update
         self.update_count = 0
         
         # 线性 epsilon 衰减
@@ -101,9 +102,14 @@ class DQNAgent(BaseAgent):
         torch.nn.utils.clip_grad_norm_(self.q_net.parameters(), max_norm=10.0)
         self.optimizer.step()
 
-        # 定期同步 target network
+        # 同步 target network
         self.update_count += 1
-        if self.update_count % self.target_update_freq == 0:
+        if self.tau is not None:
+            # soft update: θ_target = τ * θ_q + (1-τ) * θ_target
+            for p_target, p_q in zip(self.target_q_net.parameters(), self.q_net.parameters()):
+                p_target.data.mul_(1 - self.tau).add_(self.tau * p_q.data)
+        elif self.update_count % self.target_update_freq == 0:
+            # hard update
             self.target_q_net.load_state_dict(self.q_net.state_dict())
         
         # 线性衰减 epsilon

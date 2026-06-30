@@ -13,10 +13,11 @@ lr: 1e-3
 gamma: 0.99
 epsilon_start: 1.0
 epsilon_end: 0.01
-epsilon_decay_steps: 30000
+epsilon_decay_steps: 5000
 batch_size: 64
-buffer_size: 50000
-target_update_freq: 500
+buffer_size: 5000
+target_update_freq: 200    # hard update 间隔（仅 tau 未设置时生效）
+# tau: 0.001                 # soft update 系数（设置后启用 soft update，忽略 target_update_freq）
 
 # 网络
 hidden_dims: [128, 128]
