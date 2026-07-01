@@ -4,17 +4,17 @@ algorithm: ActorCritic
 
 # 训练控制（step-based）
 total_steps: 100000
-log_interval: 1024
-eval_interval: 5120
-save_interval: 20480
+log_interval: 1000
+eval_interval: 5000
+save_interval: 10000
 
 # 超参
 lr: 3e-4
 gamma: 0.99
 entropy_coef: 0.01
 vf_coef: 0.5
-rollout_length: 128
-n_step: 5
+n_steps: 5
+gae_lambda: 0.95
 normalize_advantage: false
 
 # 网络

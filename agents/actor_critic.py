@@ -64,8 +64,8 @@ class ActorCriticAgent(BaseAgent):
         self.entropy_coef = self.config.get('entropy_coef', 0.01)
         self.vf_coef = self.config.get('vf_coef', 0.5)
 
-        self.rollout_length = self.config.get('rollout_length', 128)
-        self.n_step = self.config.get('n_step', 5)
+        self.n_steps = self.config.get('n_steps', 128)
+        self.gae_lambda = self.config.get('gae_lambda', 0.95)
         self.normalize_advantage = self.config.get('normalize_advantage', False)
 
         # 用于暂存rollout数据（只存原始数据，不存梯度相关量）
@@ -82,7 +82,7 @@ class ActorCriticAgent(BaseAgent):
         n_episodes = 0
         return_dict = {}
 
-        while n_steps < self.rollout_length:
+        while n_steps < self.n_steps:
             obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
 
             with torch.no_grad():
@@ -109,13 +109,13 @@ class ActorCriticAgent(BaseAgent):
                 self._episode_reward = 0.0
         
         return_dict.update({
-            'n_steps': self.rollout_length,
+            'n_steps': self.n_steps,
             'n_episodes': n_episodes,
         })
         return return_dict
     
     def update(self) -> dict:
-        """A2C 更新，使用 n-step return"""
+        """A2C 更新，使用 GAE 计算 advantage"""
         # 重新前向计算 log_prob, entropy, value（带梯度）
         obs = torch.tensor(self._obs_batch, dtype=torch.float32, device=self.device)
         actions = torch.tensor(self._actions, dtype=torch.long, device=self.device)
@@ -131,40 +131,34 @@ class ActorCriticAgent(BaseAgent):
             last_obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
             last_value = self.model.get_value(last_obs_t).squeeze().item()
 
-        # 计算 n-step return（无梯度，作为 target）
-        returns = []
-        for t in range(self.rollout_length):
-            G = 0.0
-            gamma_k = 1.0
-            done_encountered = False
-            
-            for k in range(self.n_step):
-                if t + k >= self.rollout_length:
-                    break
-                G += gamma_k * self._rewards[t + k]
-                if self._dones[t + k]:
-                    done_encountered = True
-                    break
-                gamma_k *= self.gamma
-
-            if not done_encountered:
-                if t + self.n_step < self.rollout_length:
-                    G += gamma_k * values[t + self.n_step].item()
-                else:
-                    G += gamma_k * last_value
-            returns.append(G)
-        returns = torch.tensor(returns, dtype=torch.float32, device=self.device)
+        # GAE 计算 advantage
+        rewards = self._rewards
+        dones = self._dones
+        values_np = values.detach().cpu().numpy()
         
-        # 计算 advantage
-        advantages = returns - values.detach()
+        advantages = torch.zeros(self.n_steps, dtype=torch.float32, device=self.device)
+        gae = 0.0
+        for t in reversed(range(self.n_steps)):
+            if t == self.n_steps - 1:
+                next_value = last_value
+            else:
+                next_value = values_np[t + 1]
+            next_non_terminal = 1.0 - float(dones[t])
+            
+            delta = rewards[t] + self.gamma * next_value * next_non_terminal - values_np[t]
+            gae = delta + self.gamma * self.gae_lambda * next_non_terminal * gae
+            advantages[t] = gae
+        
+        returns = advantages + values
+        
         if self.normalize_advantage:
             advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # actor loss
-        actor_loss = -(log_probs * advantages).mean()
+        actor_loss = -(log_probs * advantages.detach()).mean()
         
         # critic loss
-        critic_loss = F.mse_loss(values, returns)
+        critic_loss = F.mse_loss(values, returns.detach())
 
         # 总 loss
         loss = actor_loss + self.vf_coef * critic_loss - self.entropy_coef * entropy
