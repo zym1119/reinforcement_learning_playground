@@ -139,7 +139,8 @@ class ActorCriticAgent(BaseAgent):
 
         return {
             'actor_loss': actor_loss.item(),
-            'critic_loss': critic_loss.item()
+            'critic_loss': critic_loss.item(),
+            'critic_lr': self.optimizer_critic.param_groups[0]['lr']
         }
 
     def predict(self, obs, deterministic=False):
@@ -151,6 +152,10 @@ class ActorCriticAgent(BaseAgent):
             return dist.mode().item()
         return dist.sample().item()
     
+    def get_current_lr(self):
+        """返回 actor lr，critic lr 通过 train_info 记录"""
+        return self.optimizer_actor.param_groups[0]['lr']
+
     def get_state_dict(self) -> dict:
         return {
             'actor': self.actor.state_dict(),

@@ -7,15 +7,18 @@ A modular RL framework for experimenting with various reinforcement learning alg
 ```
 ├── agents/
 │   ├── base.py              # BaseAgent: unified train & eval base class
-│   └── policy_gradient.py   # REINFORCE (PGAgent)
-├── networks/
+│   ├── policy_gradient.py   # REINFORCE (PGAgent)
+│   ├── dqn.py               # DQN / Double DQN
+│   └── actor_critic.py      # Actor-Critic (A2C)
+├── blocks/
 │   ├── mlp.py               # MLP builder with orthogonal init
-│   └── distributions.py     # CategoricalDist, GaussianDist
-├── buffers/
-│   └── replay_buffer.py     # ReplayBuffer, RolloutBuffer (with GAE)
+│   ├── distributions.py     # CategoricalDist, GaussianDist
+│   └── replay_buffer.py     # ReplayBuffer for off-policy methods
 ├── configs/
-│   ├── _base_/              # Base configs (default.yaml, pg.yaml)
-│   └── pg_cartpole.yaml     # CartPole + PolicyGradient
+│   ├── _base_/              # Base configs (default.yaml, pg.yaml, dqn.yaml, etc.)
+│   ├── pg_cartpole.yaml     # CartPole + PolicyGradient
+│   ├── dqn_cartpole.yaml    # CartPole + DQN
+│   └── ac_cartpole.yaml     # CartPole + Actor-Critic
 ├── tools/
 │   └── visualize_env.py     # Record env video with random actions
 ├── train.py                 # Training entry point
@@ -109,6 +112,6 @@ class YourAgent(BaseAgent):
 | Algorithm | Type | Status |
 |-----------|------|--------|
 | REINFORCE (Policy Gradient) | On-policy | ✅ |
-| DQN | Off-policy | Planned |
+| DQN / Double DQN | Off-policy | ✅ |
+| Actor-Critic (A2C) | On-policy | ✅ |
 | PPO | On-policy | Planned |
-| A2C | On-policy | Planned |
