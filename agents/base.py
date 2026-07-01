@@ -4,6 +4,7 @@ import gymnasium as gym
 import torch
 import numpy as np
 
+from blocks.normalize_wrapper import NormalizeObservation, NormalizeReward
 from utils import (
     Logger,
     get_device,
@@ -36,6 +37,17 @@ class BaseAgent(ABC):
         if mode == 'train':
             self.env = gym.make(config['env'], **config.get('env_kwargs', {}))
             self.eval_env = gym.make(config['env'], **config.get('env_kwargs', {}))
+            # 归一化 wrapper
+            norm_cfg = config.get('normalize', {})
+            if norm_cfg.get('obs', False):
+                clip_obs = norm_cfg.get('clip_obs', 10.0)
+                self.env = NormalizeObservation(self.env, clip=clip_obs)
+                self.eval_env = NormalizeObservation(self.eval_env, clip=clip_obs)
+                self.eval_env.training = False  # eval 不更新统计量
+            if norm_cfg.get('reward', False):
+                gamma = config.get('gamma', 0.99)
+                clip_reward = norm_cfg.get('clip_reward', 10.0)
+                self.env = NormalizeReward(self.env, gamma=gamma, clip=clip_reward)
         else:
             eval_cfg = config.get('evaluation', {})
             self.dump_video = eval_cfg.get('dump_video', False)
@@ -45,6 +57,12 @@ class BaseAgent(ABC):
                 render_mode=render_mode,
                 **config.get('env_kwargs', {}),
             )
+            # eval 模式也需要 obs 归一化（统计量从 checkpoint 加载）
+            norm_cfg = config.get('normalize', {})
+            if norm_cfg.get('obs', False):
+                clip_obs = norm_cfg.get('clip_obs', 10.0)
+                self.env = NormalizeObservation(self.env, clip=clip_obs)
+                self.env.training = False
             # eval 模式下的 episode/step 限制
             self.total_episodes = eval_cfg.get('total_episodes')
             self.total_steps = eval_cfg.get('total_steps')
@@ -225,6 +243,8 @@ class BaseAgent(ABC):
 
     def evaluate(self, n_episodes: int = 10) -> float:
         """用 eval_env 评估当前策略，返回平均 reward"""
+        # 同步 obs 归一化统计量到 eval_env
+        self._sync_obs_rms()
         eval_cfg = self.config.get('evaluation', {})
         deterministic = eval_cfg.get('deterministic', True)
         rewards = []
@@ -240,15 +260,59 @@ class BaseAgent(ABC):
             rewards.append(total_reward)
         return sum(rewards) / len(rewards)
 
+    def _sync_obs_rms(self):
+        """同步 train env 的 obs 归一化统计量到 eval env"""
+        train_env = self.env
+        eval_env = self.eval_env
+        # 找到 NormalizeObservation wrapper
+        while hasattr(train_env, 'env'):
+            if isinstance(train_env, NormalizeObservation):
+                break
+            train_env = train_env.env
+        while hasattr(eval_env, 'env'):
+            if isinstance(eval_env, NormalizeObservation):
+                break
+            eval_env = eval_env.env
+        if isinstance(train_env, NormalizeObservation) and isinstance(eval_env, NormalizeObservation):
+            eval_env.obs_rms.load_state_dict(train_env.obs_rms.state_dict())
+
+    def _get_normalize_state(self) -> dict:
+        """获取归一化 wrapper 的统计量"""
+        state = {}
+        env = self.env
+        while hasattr(env, 'env'):
+            if isinstance(env, NormalizeObservation):
+                state['obs_rms'] = env.obs_rms.state_dict()
+            if isinstance(env, NormalizeReward):
+                state['return_rms'] = env.return_rms.state_dict()
+            env = env.env
+        return state
+
+    def _load_normalize_state(self, state: dict):
+        """加载归一化 wrapper 的统计量"""
+        env = self.env
+        while hasattr(env, 'env'):
+            if isinstance(env, NormalizeObservation) and 'obs_rms' in state:
+                env.obs_rms.load_state_dict(state['obs_rms'])
+            if isinstance(env, NormalizeReward) and 'return_rms' in state:
+                env.return_rms.load_state_dict(state['return_rms'])
+            env = env.env
+
     def save_checkpoint(self, filename: str):
         """保存模型 checkpoint"""
         path = self.run_dir / 'checkpoints' / filename
-        torch.save(self.get_state_dict(), path)
+        save_dict = self.get_state_dict()
+        norm_state = self._get_normalize_state()
+        if norm_state:
+            save_dict['normalize'] = norm_state
+        torch.save(save_dict, path)
         self.logger.info(f'Saved: {path}')
 
     def load_checkpoint(self, ckpt_path: str):
         """加载 checkpoint，子类可 override 以支持多网络"""
         state_dict = torch.load(ckpt_path, map_location=self.device)
+        if 'normalize' in state_dict:
+            self._load_normalize_state(state_dict.pop('normalize'))
         self.policy.load_state_dict(state_dict)
 
     def get_state_dict(self) -> dict:

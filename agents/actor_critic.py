@@ -29,7 +29,15 @@ class ActorCriticNetwork(nn.Module):
         # critic head
         self.critic_head = nn.Linear(prev_dim, 1)
 
-        _init_weights(self)
+        # 初始化：backbone 用 sqrt(2) gain，actor head 用 0.01，critic head 用 1.0
+        for m in self.backbone.modules():
+            if isinstance(m, nn.Linear):
+                nn.init.orthogonal_(m.weight, gain=2 ** 0.5)
+                nn.init.zeros_(m.bias)
+        nn.init.orthogonal_(self.actor_head.weight, gain=0.01)
+        nn.init.zeros_(self.actor_head.bias)
+        nn.init.orthogonal_(self.critic_head.weight, gain=1.0)
+        nn.init.zeros_(self.critic_head.bias)
 
     def forward(self, obs):
         features = self.backbone(obs)
@@ -58,7 +66,12 @@ class ActorCriticAgent(BaseAgent):
         # 共享 backbone 的 actor-critic 网络
         self.model = ActorCriticNetwork(obs_dim, act_dim, hidden_dims, activation).to(self.device)
 
-        self.optimizer = optim.Adam(self.model.parameters(), lr=self.config['lr'])
+        self.optimizer = optim.RMSprop(
+            self.model.parameters(),
+            lr=self.config.get('lr', 7e-4),
+            alpha=0.99,
+            eps=1e-5,
+        )
         
         self.gamma = self.config.get('gamma', 0.99)
         self.entropy_coef = self.config.get('entropy_coef', 0.01)
@@ -201,5 +214,7 @@ class ActorCriticAgent(BaseAgent):
     
     def load_checkpoint(self, ckpt_path: str):
         state_dict = torch.load(ckpt_path, map_location=self.device)
+        if 'normalize' in state_dict:
+            self._load_normalize_state(state_dict.pop('normalize'))
         self.model.load_state_dict(state_dict['model'])
         self.optimizer.load_state_dict(state_dict['optimizer'])
