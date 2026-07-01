@@ -225,13 +225,15 @@ class BaseAgent(ABC):
 
     def evaluate(self, n_episodes: int = 10) -> float:
         """用 eval_env 评估当前策略，返回平均 reward"""
+        eval_cfg = self.config.get('evaluation', {})
+        deterministic = eval_cfg.get('deterministic', True)
         rewards = []
         for _ in range(n_episodes):
             obs, _ = self.eval_env.reset()
             done = False
             total_reward = 0.0
             while not done:
-                action = self.predict(obs, deterministic=True)
+                action = self.predict(obs, deterministic=deterministic)
                 obs, reward, terminated, truncated, _ = self.eval_env.step(action)
                 done = terminated or truncated
                 total_reward += reward

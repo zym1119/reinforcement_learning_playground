@@ -14,9 +14,11 @@ gamma: 0.99
 entropy_coef: 0.01
 rollout_length: 128
 n_step: 5
+normalize_advantage: false
 
 # 网络
 hidden_dims: [128, 128]
 
 evaluation:
   total_episodes: 10
+  deterministic: false

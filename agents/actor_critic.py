@@ -30,39 +30,35 @@ class ActorCriticAgent(BaseAgent):
 
         self.rollout_length = self.config.get('rollout_length', 128)
         self.n_step = self.config.get('n_step', 5)
+        self.normalize_advantage = self.config.get('normalize_advantage', False)
 
-        # 用于暂存rollout数据
-        self._logits = []
-        self._log_probs = []
-        self._values = []
+        # 用于暂存rollout数据（只存原始数据，不存梯度相关量）
+        self._obs_batch = []
+        self._actions = []
         self._rewards = []
         self._dones = []
         self._obs, _ = self.env.reset()
         self._episode_reward = 0.0
 
     def collect(self) -> dict:
-        """跑N step，收集 log_probs、values 和 rewards"""
-        self.actor.train()
-        self.critic.train()
-        
+        """采集数据，no_grad推理，只保存 obs/action/reward/done"""
         n_steps = 0
         n_episodes = 0
-
         return_dict = {}
 
         while n_steps < self.rollout_length:
             obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
-            logits = self.actor(obs_t)
-            dist = torch.distributions.Categorical(logits=logits)
-            action = dist.sample()
-            value = self.critic(obs_t)
+
+            with torch.no_grad():
+                logits = self.actor(obs_t)
+                dist = torch.distributions.Categorical(logits=logits)
+                action = dist.sample()
 
             next_obs, reward, terminated, truncated, _ = self.env.step(action.item())
             done = terminated or truncated
 
-            self._logits.append(logits)
-            self._log_probs.append(dist.log_prob(action))
-            self._values.append(value.squeeze(0))
+            self._obs_batch.append(self._obs.copy() if hasattr(self._obs, 'copy') else self._obs)
+            self._actions.append(action.item())
             self._rewards.append(reward)
             self._dones.append(done)
 
@@ -84,44 +80,57 @@ class ActorCriticAgent(BaseAgent):
     
     def update(self) -> dict:
         """A2C 更新，使用 n-step return"""
-        values = torch.stack(self._values)
+        # 重新前向计算 log_prob, entropy, value（带梯度）
+        obs = torch.tensor(self._obs_batch, dtype=torch.float32, device=self.device)
+        actions = torch.tensor(self._actions, dtype=torch.long, device=self.device)
+
+        logits = self.actor(obs)
+        dist = torch.distributions.Categorical(logits=logits)
+        log_probs = dist.log_prob(actions)
+        entropy = dist.entropy().mean()
+
+        values = self.critic(obs).squeeze(-1)
+
+        # 计算 last_value 用于末尾 bootstrap
+        with torch.no_grad():
+            last_obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
+            last_value = self.critic(last_obs_t).squeeze().item()
+
+        # 计算 n-step return（无梯度，作为 target）
         returns = []
-        
-        # 计算全部 rollout_length 个样本的 return
         for t in range(self.rollout_length):
             G = 0.0
             gamma_k = 1.0
             done_encountered = False
-            # 最多往后看 n_step 步，或遇到 done
-            max_k = min(self.n_step, self.rollout_length - t)
-            for k in range(max_k):
+            
+            for k in range(self.n_step):
+                if t + k >= self.rollout_length:
+                    break
                 G += gamma_k * self._rewards[t + k]
                 if self._dones[t + k]:
                     done_encountered = True
                     break
                 gamma_k *= self.gamma
-            # bootstrap V(s_{t+n})
-            if not done_encountered and (t + self.n_step) < self.rollout_length:
-                G += gamma_k * values[t + self.n_step].item()
+
+            if not done_encountered:
+                if t + self.n_step < self.rollout_length:
+                    G += gamma_k * values[t + self.n_step].item()
+                else:
+                    G += gamma_k * last_value
             returns.append(G)
         returns = torch.tensor(returns, dtype=torch.float32, device=self.device)
         
         # 计算 advantage
-        advantages = returns - values
-        advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
+        advantages = returns - values.detach()
+        if self.normalize_advantage:
+            advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
-        # 计算 actor loss
-        log_probs = torch.stack(self._log_probs)
-        actor_loss = -(log_probs * advantages.detach()).mean()
-
-        # 计算 entropy loss
-        logits = torch.stack(self._logits)
-        entropy = torch.distributions.Categorical(logits=logits).entropy().mean()
+        # actor loss
+        actor_loss = -(log_probs * advantages).mean()
         actor_loss -= self.entropy_coef * entropy
         
-        # 计算 critic loss
-        # critic_loss = F.mse_loss(values[:-self.n_step], returns)
-        critic_loss = F.smooth_l1_loss(values, returns.detach())
+        # critic loss
+        critic_loss = F.mse_loss(values, returns)
 
         # 更新 actor 和 critic
         self.optimizer_actor.zero_grad()
@@ -135,9 +144,8 @@ class ActorCriticAgent(BaseAgent):
         self.optimizer_critic.step()
 
         # 清空暂存数据
-        self._logits = []
-        self._log_probs = []
-        self._values = []
+        self._obs_batch = []
+        self._actions = []
         self._rewards = []
         self._dones = []
 
