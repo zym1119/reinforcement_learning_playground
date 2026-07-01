@@ -1,0 +1,5 @@
+_base_: _base_/actor_critic.yaml
+
+env: CartPole-v1
+total_steps: 100000
+lr: 3e-4

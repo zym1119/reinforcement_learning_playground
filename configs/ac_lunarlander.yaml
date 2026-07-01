@@ -1,0 +1,5 @@
+_base_: _base_/actor_critic.yaml
+
+env: LunarLander-v2
+total_steps: 200000
+lr: 3e-4
