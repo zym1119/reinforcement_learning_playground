@@ -87,37 +87,41 @@ class ActorCriticAgent(BaseAgent):
         values = torch.stack(self._values)
         returns = []
         
-        # 只计算前 T - n_step 步的 return，bootstrap 全从 values 取
-        for t in range(self.rollout_length - self.n_step):
+        # 计算全部 rollout_length 个样本的 return
+        for t in range(self.rollout_length):
             G = 0.0
             gamma_k = 1.0
-            for k in range(self.n_step):
+            done_encountered = False
+            # 最多往后看 n_step 步，或遇到 done
+            max_k = min(self.n_step, self.rollout_length - t)
+            for k in range(max_k):
                 G += gamma_k * self._rewards[t + k]
                 if self._dones[t + k]:
-                    gamma_k = 0.0
+                    done_encountered = True
                     break
                 gamma_k *= self.gamma
             # bootstrap V(s_{t+n})
-            G += gamma_k * values[t + self.n_step].item()
+            if not done_encountered and (t + self.n_step) < self.rollout_length:
+                G += gamma_k * values[t + self.n_step].item()
             returns.append(G)
         returns = torch.tensor(returns, dtype=torch.float32, device=self.device)
         
-        # 计算 advantage 并归一化
-        advantages = returns - values[:-self.n_step]
+        # 计算 advantage
+        advantages = returns - values
         advantages = (advantages - advantages.mean()) / (advantages.std() + 1e-8)
 
         # 计算 actor loss
-        log_probs = torch.stack(self._log_probs[:-self.n_step])
+        log_probs = torch.stack(self._log_probs)
         actor_loss = -(log_probs * advantages.detach()).mean()
 
         # 计算 entropy loss
-        logits = torch.stack(self._logits[:-self.n_step])
+        logits = torch.stack(self._logits)
         entropy = torch.distributions.Categorical(logits=logits).entropy().mean()
         actor_loss -= self.entropy_coef * entropy
         
         # 计算 critic loss
         # critic_loss = F.mse_loss(values[:-self.n_step], returns)
-        critic_loss = F.smooth_l1_loss(values[:-self.n_step], returns.detach())
+        critic_loss = F.smooth_l1_loss(values, returns.detach())
 
         # 更新 actor 和 critic
         self.optimizer_actor.zero_grad()
