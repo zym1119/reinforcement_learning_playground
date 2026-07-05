@@ -64,11 +64,10 @@ class DQNAgent(BaseAgent):
         info = {'n_steps': 1, 'n_episodes': 0}
 
         with torch.no_grad():
-            obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
             if torch.rand(1).item() < self.epsilon:
                 action = self.env.action_space.sample()
             else:
-                q_values = self.q_net(obs_t)
+                q_values = self.q_net(self._obs)
                 action = q_values.argmax().item()
 
         next_obs, reward, terminated, truncated, _ = self.env.step(action)
@@ -123,8 +122,7 @@ class DQNAgent(BaseAgent):
     def predict(self, obs, deterministic=False):
         self.q_net.eval()
         with torch.no_grad():
-            obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device)
-            q_values = self.q_net(obs_t)
+            q_values = self.q_net(obs)
         if deterministic:
             action = q_values.argmax().item()
         else:

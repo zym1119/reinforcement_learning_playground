@@ -30,6 +30,7 @@ class GaussianDist:
         self.dist = Normal(mean, std)
 
     def sample(self) -> torch.Tensor:
+        
         return self.dist.rsample()
 
     def log_prob(self, action: torch.Tensor) -> torch.Tensor:

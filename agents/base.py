@@ -1,6 +1,7 @@
 from abc import ABC, abstractmethod
 
 import gymnasium as gym
+from gymnasium.wrappers import NumpyToTorch
 import torch
 import numpy as np
 
@@ -48,6 +49,9 @@ class BaseAgent(ABC):
                 gamma = config.get('gamma', 0.99)
                 clip_reward = norm_cfg.get('clip_reward', 10.0)
                 self.env = NormalizeReward(self.env, gamma=gamma, clip=clip_reward)
+            # NumpyToTorch wrapper（最外层，自动做 numpy<->torch 转换）
+            self.env = NumpyToTorch(self.env, device=self.device)
+            self.eval_env = NumpyToTorch(self.eval_env, device=self.device)
         else:
             eval_cfg = config.get('evaluation', {})
             self.dump_video = eval_cfg.get('dump_video', False)
@@ -63,6 +67,8 @@ class BaseAgent(ABC):
                 clip_obs = norm_cfg.get('clip_obs', 10.0)
                 self.env = NormalizeObservation(self.env, clip=clip_obs)
                 self.env.training = False
+            # NumpyToTorch wrapper
+            self.env = NumpyToTorch(self.env, device=self.device)
             # eval 模式下的 episode/step 限制
             self.total_episodes = eval_cfg.get('total_episodes')
             self.total_steps = eval_cfg.get('total_steps')

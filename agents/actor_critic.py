@@ -96,17 +96,15 @@ class ActorCriticAgent(BaseAgent):
         return_dict = {}
 
         while n_steps < self.n_steps:
-            obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
-
             with torch.no_grad():
-                logits = self.model.get_logits(obs_t)
+                logits = self.model.get_logits(self._obs)
                 dist = torch.distributions.Categorical(logits=logits)
                 action = dist.sample()
 
             next_obs, reward, terminated, truncated, _ = self.env.step(action.item())
             done = terminated or truncated
 
-            self._obs_batch.append(self._obs.copy() if hasattr(self._obs, 'copy') else self._obs)
+            self._obs_batch.append(self._obs)
             self._actions.append(action.item())
             self._rewards.append(reward)
             self._dones.append(done)
@@ -130,7 +128,7 @@ class ActorCriticAgent(BaseAgent):
     def update(self) -> dict:
         """A2C 更新，使用 GAE 计算 advantage"""
         # 重新前向计算 log_prob, entropy, value（带梯度）
-        obs = torch.tensor(self._obs_batch, dtype=torch.float32, device=self.device)
+        obs = torch.stack(self._obs_batch)
         actions = torch.tensor(self._actions, dtype=torch.long, device=self.device)
 
         logits, values = self.model(obs)
@@ -141,8 +139,7 @@ class ActorCriticAgent(BaseAgent):
 
         # 计算 last_value 用于末尾 bootstrap
         with torch.no_grad():
-            last_obs_t = torch.tensor(self._obs, dtype=torch.float32, device=self.device)
-            last_value = self.model.get_value(last_obs_t).squeeze().item()
+            last_value = self.model.get_value(self._obs).squeeze().item()
 
         # GAE 计算 advantage
         rewards = self._rewards
@@ -195,9 +192,8 @@ class ActorCriticAgent(BaseAgent):
         }
 
     def predict(self, obs, deterministic=False):
-        obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device)
         with torch.no_grad():
-            logits = self.model.get_logits(obs_t)
+            logits = self.model.get_logits(obs)
         dist = CategoricalDist(logits=logits)
         if deterministic:
             return dist.mode().item()

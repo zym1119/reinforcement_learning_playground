@@ -36,8 +36,7 @@ class PGAgent(BaseAgent):
         steps = 0
 
         while not done:
-            obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device)
-            logits = self.policy(obs_t)
+            logits = self.policy(obs)
             dist = CategoricalDist(logits)
             action = dist.sample()
             self._log_probs.append(dist.log_prob(action))
@@ -74,9 +73,8 @@ class PGAgent(BaseAgent):
         return {'loss': loss.item()}
 
     def predict(self, obs, deterministic=False):
-        obs_t = torch.tensor(obs, dtype=torch.float32, device=self.device)
         with torch.no_grad():
-            logits = self.policy(obs_t)
+            logits = self.policy(obs)
         dist = CategoricalDist(logits)
         if deterministic:
             return dist.mode().item()

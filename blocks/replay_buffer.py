@@ -1,6 +1,5 @@
 import random
 from collections import deque
-from typing import Tuple
 
 import numpy as np
 import torch
@@ -9,14 +8,14 @@ import torch
 class ReplayBuffer:
     """
     经验回放缓冲区（Off-policy 算法: DQN, DDQN, SAC, TD3）。
-    存储 (obs, action, reward, next_obs, done) 五元组。
+    存储 (obs, action, reward, next_obs, done) 五元组，obs/next_obs 直接存 tensor。
     """
 
     def __init__(self, capacity: int):
         self.buffer = deque(maxlen=capacity)
 
     def push(self, obs, action, reward, next_obs, done):
-        """添加一条经验"""
+        """添加一条经验，obs/next_obs 为 tensor，action 为 int/tensor，reward/done 为标量"""
         self.buffer.append((obs, action, reward, next_obs, done))
 
     def sample(self, batch_size: int, device: torch.device = None) -> dict:
@@ -29,12 +28,21 @@ class ReplayBuffer:
         batch = random.sample(self.buffer, batch_size)
         obs, action, reward, next_obs, done = zip(*batch)
 
+        batch_obs = torch.stack(obs)
+        next_batch_obs = torch.stack(next_obs)
+
+        # action 可能是标量（离散）或 tensor（连续）
+        if isinstance(action[0], torch.Tensor):
+            batch_action = torch.stack(action)
+        else:
+            batch_action = torch.tensor(action, dtype=torch.long)
+
         result = {
-            'obs': torch.tensor(np.array(obs), dtype=torch.float32),
-            'action': torch.tensor(np.array(action), dtype=torch.long),
-            'reward': torch.tensor(np.array(reward), dtype=torch.float32).unsqueeze(-1),
-            'next_obs': torch.tensor(np.array(next_obs), dtype=torch.float32),
-            'done': torch.tensor(np.array(done), dtype=torch.float32).unsqueeze(-1),
+            'obs': batch_obs,
+            'action': batch_action,
+            'reward': torch.tensor(reward, dtype=torch.float32).unsqueeze(-1),
+            'next_obs': next_batch_obs,
+            'done': torch.tensor(done, dtype=torch.float32).unsqueeze(-1),
         }
 
         if device:
