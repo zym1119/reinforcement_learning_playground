@@ -1,0 +1,5 @@
+_base_: _base_/sac.yaml
+
+env: Walker2d-v5
+total_steps: 1000000
+lr: 3e-4

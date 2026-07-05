@@ -8,6 +8,8 @@ Usage:
 import argparse
 import os
 
+os.environ.setdefault('MUJOCO_GL', 'osmesa')
+
 import gymnasium as gym
 import numpy as np
 

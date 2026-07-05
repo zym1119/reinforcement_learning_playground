@@ -339,9 +339,9 @@ class BaseAgent(ABC):
         frames = []
 
         while True:
-            # 录制帧
+            # 录制帧（绕过 NumpyToTorch wrapper 直接获取 numpy frame）
             if self.dump_video:
-                frame = self.env.render()
+                frame = self.env.unwrapped.render()
                 frame = self._overlay_text(frame, len(episode_rewards) + 1, ep_step + 1)
                 frames.append(frame)
 
