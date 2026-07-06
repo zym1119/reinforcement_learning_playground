@@ -1,44 +1,117 @@
-# reinforcement_learning_playground
-My playground for learning RL
+# Reinforcement Learning Playground
 
-# Environment
-Install `gym` python package.
-```bash
-pip install gym
-pip install pygame
+A modular RL framework for experimenting with various reinforcement learning algorithms.
+
+## Project Structure
+
+```
+├── agents/
+│   ├── base.py              # BaseAgent: unified train & eval base class
+│   ├── policy_gradient.py   # REINFORCE (PGAgent)
+│   ├── dqn.py               # DQN / Double DQN
+│   └── actor_critic.py      # Actor-Critic (A2C)
+├── blocks/
+│   ├── mlp.py               # MLP builder with orthogonal init
+│   ├── distributions.py     # CategoricalDist, GaussianDist
+│   └── replay_buffer.py     # ReplayBuffer for off-policy methods
+├── configs/
+│   ├── _base_/              # Base configs (default.yaml, pg.yaml, dqn.yaml, etc.)
+│   ├── pg_cartpole.yaml     # CartPole + PolicyGradient
+│   ├── dqn_cartpole.yaml    # CartPole + DQN
+│   └── ac_cartpole.yaml     # CartPole + Actor-Critic
+├── tools/
+│   └── visualize_env.py     # Record env video with random actions
+├── train.py                 # Training entry point
+├── test.py                  # Evaluation entry point
+└── utils.py                 # Config, Logger, Registry, Device/Seed
 ```
 
-Try this demo code to check `gym` installation.
+## Installation
+
+```bash
+pip install -r requirements.txt
+```
+
+Optional dependencies for video recording:
+```bash
+pip install opencv-python imageio[ffmpeg]
+```
+
+## Usage
+
+### Training
+
+```bash
+python train.py --config configs/pg_cartpole.yaml --exp-name my_experiment
+```
+
+Override config values from command line:
+```bash
+python train.py -c configs/pg_cartpole.yaml --overrides lr=1e-4 seed=123
+```
+
+### Evaluation
+
+```bash
+python test.py --config configs/pg_cartpole.yaml --ckpt work_dirs/my_experiment/checkpoints/model_best.pth --exp-name eval_test
+```
+
+## Config System
+
+YAML configs with `_base_` inheritance (similar to mmdetection):
+
+```yaml
+# configs/pg_cartpole.yaml
+_base_: _base_/pg.yaml
+
+env: CartPole-v1
+total_episodes: 1000
+lr: 1e-3
+```
+
+Features:
+- Hierarchical inheritance via `_base_`
+- LR scheduler config (StepLR / ExponentialLR / CosineAnnealingLR)
+- Evaluation config (episode/step-based, video recording)
+- CLI overrides with `--overrides key=value`
+
+## Implement Your Own Algorithm
+
+1. Create `agents/your_algo.py`
+2. Subclass `BaseAgent` and implement 4 methods:
+
 ```python
-import gym
+from agents.base import BaseAgent
+from utils import AGENT
 
-env = gym.make('CartPole-v1', render_mode='human')
+@AGENT.register('YourAlgo')
+class YourAgent(BaseAgent):
 
-state = env.reset()
+    def init_model(self):
+        """Init networks and optimizer"""
+        ...
 
-for _ in range(100):
-    env.render()
-    action = env.action_space.sample()
-    next_state, reward, done, _, _ = env.step(action)
-    if done:
-        state = env.reset()
-env.close()
+    def collect(self) -> dict:
+        """Interact with env, return {'n_steps': ..., 'episode_reward': ...}"""
+        ...
+
+    def update(self) -> dict:
+        """Gradient update, return {'loss': ...}"""
+        ...
+
+    def predict(self, obs, deterministic=False):
+        """Select action from observation"""
+        ...
 ```
 
+3. Register import in `agents/__init__.py`
+4. Create a config YAML with `algorithm: YourAlgo`
 
-# Usage
+## Algorithms
 
-train:
-```bash
-python train.py --model {model_type} --lr {lr} --episodes {num of episodes}
-```
-
-test:
-```bash
-python test.py --model {model_type} -c {ckpt path}
-```
-
-# Implement your own method
-
-1. Define you model in `models` folder
-2. Implement your own Trainer and Inferer based on `BaseTrainer` or `BaseInferer` defined in `runner.py`
+| Algorithm | Type | Status |
+|-----------|------|--------|
+| REINFORCE (Policy Gradient) | On-policy | ✅ |
+| DQN / Double DQN | Off-policy | ✅ |
+| Actor-Critic (A2C) | On-policy | ✅ |
+| PPO | On-policy | Planned |

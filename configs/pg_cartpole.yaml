@@ -1,0 +1,6 @@
+_base_: _base_/pg.yaml
+
+env: CartPole-v1
+total_episodes: 1000
+lr: 1e-3
+

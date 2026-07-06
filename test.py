@@ -1,37 +1,28 @@
 import argparse
-from pathlib import Path
 
-from utils import get_inferer, INFERER
-
-import gym
+from utils import load_config, create_agent
 
 
 def parse_args():
-    parser = argparse.ArgumentParser('Reinforcement Learning test script')
-    parser.add_argument('--env', type=str, default='CartPole-v1')
-    parser.add_argument('--model', type=str, default='PolicyGradient', help='model type')
-    parser.add_argument('--run-name', '-n', type=str,
-                        help='experiment run name')
-    parser.add_argument('--root-dir', '-r', type=str,
-                        default='./runs', help='root folder for saving runs')
-    parser.add_argument('--ckpt', '-c', type=str,
-                        help='checkpoint path')
-    parser.add_argument('--steps', type=int, default=1000,
-                        help='test steps')
+    parser = argparse.ArgumentParser(description='RL Evaluation')
+    parser.add_argument('--config', '-c', type=str, required=True,
+                        help='path to config yaml file')
+    parser.add_argument('--ckpt', type=str, required=True,
+                        help='path to checkpoint file')
+    parser.add_argument('--exp-name', '-n', type=str, default=None,
+                        help='experiment name (work_dirs/{exp_name})')
+    parser.add_argument('--overrides', nargs='+', default=[],
+                        help='key=value pairs')
     return parser.parse_args()
 
 
-if __name__ == '__main__':
+def main():
     args = parse_args()
+    config = load_config(args.config, overrides=args.overrides, exp_name=args.exp_name)
+    config['ckpt_path'] = args.ckpt
+    agent = create_agent(config, mode='eval')
+    agent.run()
 
-    env = gym.make(args.env, render_mode='human')
 
-    # find ckpt
-    if args.ckpt is not None:
-        ckpt_path = args.ckpt
-    else:
-        assert args.run_name is not None
-        ckpt_path = Path(args.root_dir) / f'{args.run_name}/model_last.pth'
-
-    inferer = get_inferer(args.model, env, ckpt_path)
-    inferer.infer()
+if __name__ == '__main__':
+    main()

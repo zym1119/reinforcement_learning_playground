@@ -1,0 +1,8 @@
+_base_: _base_/actor_critic.yaml
+
+env: LunarLander-v3
+total_steps: 200000
+lr: 3e-4
+normalize_advantage: true
+
+hidden_dims: [256, 256]
