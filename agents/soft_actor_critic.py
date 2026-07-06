@@ -13,6 +13,10 @@ from blocks.replay_buffer import ReplayBuffer
 from utils import AGENT
 
 
+LOG_STD_MIN = -20
+LOG_STD_MAX = 2
+
+
 class QNetwork(nn.Module):
     """Critic 网络：输入 obs 和 action，输出 Q 值"""
 
@@ -38,8 +42,9 @@ class ActorNetwork(nn.Module):
     def forward(self, obs):
         mean_log_std = self.net(obs.float())
         mean, log_std = torch.chunk(mean_log_std, 2, dim=-1)
+        log_std = torch.clamp(log_std, LOG_STD_MIN, LOG_STD_MAX)
         return mean, log_std
-    
+
     def get_action(self, obs):
         mean, log_std = self(obs)
         std = torch.exp(log_std)
@@ -79,10 +84,19 @@ class SACAgent(BaseAgent):
         self.batch_size = self.config.get('batch_size', 256)
         self.buffer = ReplayBuffer(self.config.get('buffer_size', 1000000))
 
-        self.alpha = self.config.get('alpha', 0.2)
         self.gamma = self.config.get('gamma', 0.99)
         self.tau = self.config.get('tau', 0.005)
         self.policy_delay = self.config.get('policy_delay', 1)
+
+        # Automatic entropy tuning
+        self.automatic_entropy_tuning = self.config.get('automatic_entropy_tuning', True)
+        if self.automatic_entropy_tuning:
+            self.target_entropy = -act_dim  # -dim(A)
+            self.log_alpha = torch.zeros(1, requires_grad=True, device=self.device)
+            self.optimizer_alpha = optim.Adam([self.log_alpha], lr=self.config.get('alpha_lr', 3e-4))
+            self.alpha = self.log_alpha.exp().item()
+        else:
+            self.alpha = self.config.get('alpha', 0.2)
 
         self.prefill_replay_buffer()
 
@@ -162,6 +176,7 @@ class SACAgent(BaseAgent):
         self.optimizer_critic.step()
 
         # update actor
+        alpha_loss = torch.tensor(0.0)
         if self.steps % self.policy_delay == 0:
             action, log_prob = self.actor.get_action(obs)
             q1 = self.critic1(obs, action)
@@ -171,8 +186,16 @@ class SACAgent(BaseAgent):
             self.optimizer_actor.zero_grad()
             actor_loss.backward()
             self.optimizer_actor.step()
+
+            # update alpha
+            if self.automatic_entropy_tuning:
+                alpha_loss = -(self.log_alpha * (log_prob.detach() + self.target_entropy)).mean()
+                self.optimizer_alpha.zero_grad()
+                alpha_loss.backward()
+                self.optimizer_alpha.step()
+                self.alpha = self.log_alpha.exp().item()
         else:
-            actor_loss = obs.sum() * 0.0  # dummy loss for logging
+            actor_loss = torch.tensor(0.0)
 
         # soft update target critics
         for p_target, p in zip(self.target_critic1.parameters(), self.critic1.parameters()):
@@ -183,6 +206,8 @@ class SACAgent(BaseAgent):
         return_dict = {
             'critic_loss': critic_loss.item(),
             'actor_loss': actor_loss.item(),
+            'alpha_loss': alpha_loss.item(),
+            'alpha': self.alpha,
         }
 
         return return_dict
@@ -195,7 +220,7 @@ class SACAgent(BaseAgent):
             else:
                 action, _ = self.actor.get_action(obs)
         return action
-    
+
     def get_state_dict(self) -> dict:
         return {
             'actor': self.actor.state_dict(),
@@ -206,7 +231,7 @@ class SACAgent(BaseAgent):
             'optimizer_actor': self.optimizer_actor.state_dict(),
             'optimizer_critic': self.optimizer_critic.state_dict(),
         }
-    
+
     def load_checkpoint(self, ckpt_path: str):
         state_dict = torch.load(ckpt_path, map_location=self.device)
         self.actor.load_state_dict(state_dict['actor'])

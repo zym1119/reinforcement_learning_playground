@@ -1,5 +1,8 @@
 _base_: _base_/dqn.yaml
 
 env: CartPole-v1
-total_steps: 100000
-lr: 1e-3
+total_steps: 50000
+buffer_size: 10000
+target_update_freq: 200
+lr: 5e-4
+
