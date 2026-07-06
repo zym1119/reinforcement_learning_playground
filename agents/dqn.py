@@ -37,18 +37,20 @@ class DQNAgent(BaseAgent):
         self.epsilon_decay_steps = self.config.get('epsilon_decay_steps', 10000)
         self.epsilon = self.epsilon_start
 
-        self.prefill_replay_buffer()
-
         # 持久状态：collect 跨步维护
         self._obs, _ = self.env.reset()
         self._episode_reward = 0.0
+    
+    def before_train(self):
+        super().before_train()
+        self.prefill_replay_buffer()  # 在训练前预填充经验回放缓冲区
 
     def prefill_replay_buffer(self):
         """预先填充经验回放缓冲区"""
         obs, _ = self.env.reset()
         done = False
 
-        while len(self.buffer) < self.batch_size:
+        while len(self.buffer) < self.config.get('buffer_size', 10000) // 10:
             action = self.env.action_space.sample()
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
@@ -57,6 +59,7 @@ class DQNAgent(BaseAgent):
             if done:
                 obs, _ = self.env.reset()
                 done = False
+        self.logger.info(f"Prefilled replay buffer with {len(self.buffer)} transitions.")
 
     def collect(self) -> dict:
         """Step-based: 每次走 1 步，episode 结束时返回 reward"""
