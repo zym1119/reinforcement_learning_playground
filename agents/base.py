@@ -1,11 +1,11 @@
 from abc import ABC, abstractmethod
 
 import gymnasium as gym
-from gymnasium.wrappers import NumpyToTorch
 import torch
 import numpy as np
 
-from blocks.normalize_wrapper import NormalizeObservation, NormalizeReward
+from env_utils.normalize_wrapper import NormalizeObservation, NormalizeReward
+from env_utils.make import make_env
 from utils import (
     Logger,
     get_device,
@@ -35,40 +35,39 @@ class BaseAgent(ABC):
         set_seed(config.get('seed', 42))
 
         # 环境
+        norm_cfg = config.get('normalize', {})
+        gamma = config.get('gamma', 0.99)
+
         if mode == 'train':
-            self.env = gym.make(config['env'], **config.get('env_kwargs', {}))
-            self.eval_env = gym.make(config['env'], **config.get('env_kwargs', {}))
-            # 归一化 wrapper
-            norm_cfg = config.get('normalize', {})
-            if norm_cfg.get('obs', False):
-                clip_obs = norm_cfg.get('clip_obs', 10.0)
-                self.env = NormalizeObservation(self.env, clip=clip_obs)
-                self.eval_env = NormalizeObservation(self.eval_env, clip=clip_obs)
-                self.eval_env.training = False  # eval 不更新统计量
-            if norm_cfg.get('reward', False):
-                gamma = config.get('gamma', 0.99)
-                clip_reward = norm_cfg.get('clip_reward', 10.0)
-                self.env = NormalizeReward(self.env, gamma=gamma, clip=clip_reward)
-            # NumpyToTorch wrapper（最外层，自动做 numpy<->torch 转换）
-            self.env = NumpyToTorch(self.env, device=self.device)
-            self.eval_env = NumpyToTorch(self.eval_env, device=self.device)
+            self.env = make_env(
+                config['env'],
+                env_kwargs=config.get('env_kwargs'),
+                normalize=norm_cfg,
+                gamma=gamma,
+                device=self.device,
+                training=True,
+            )
+            self.eval_env = make_env(
+                config['env'],
+                env_kwargs=config.get('env_kwargs'),
+                normalize=norm_cfg,
+                gamma=gamma,
+                device=self.device,
+                training=False,
+            )
         else:
             eval_cfg = config.get('evaluation', {})
             self.dump_video = eval_cfg.get('dump_video', False)
             render_mode = 'rgb_array' if self.dump_video else eval_cfg.get('render_mode', 'rgb_array')
-            self.env = gym.make(
+            self.env = make_env(
                 config['env'],
+                env_kwargs=config.get('env_kwargs'),
+                normalize=norm_cfg,
+                gamma=gamma,
+                device=self.device,
+                training=False,
                 render_mode=render_mode,
-                **config.get('env_kwargs', {}),
             )
-            # eval 模式也需要 obs 归一化（统计量从 checkpoint 加载）
-            norm_cfg = config.get('normalize', {})
-            if norm_cfg.get('obs', False):
-                clip_obs = norm_cfg.get('clip_obs', 10.0)
-                self.env = NormalizeObservation(self.env, clip=clip_obs)
-                self.env.training = False
-            # NumpyToTorch wrapper
-            self.env = NumpyToTorch(self.env, device=self.device)
             # eval 模式下的 episode/step 限制
             self.total_episodes = eval_cfg.get('total_episodes')
             self.total_steps = eval_cfg.get('total_steps')
