@@ -1,0 +1,38 @@
+_base_: default.yaml
+
+algorithm: PPOAtari
+
+# 并行环境
+num_envs: 8
+
+# obs 归一化（Atari 图像 /255）
+normalize:
+  obs:
+    mode: fixed
+    scale: 255.0
+
+# 训练控制（step-based）
+total_steps: 10000000
+log_interval: 10          # 每 N 次 update 打印日志
+eval_interval: 100000     # 每隔 N 步触发 eval
+save_interval: 500000     # 每隔 N 步保存 checkpoint
+max_keep_ckpts: 10         # 只保留最近 N 个 periodic checkpoint（-1 不限制）
+
+# PPO 超参
+lr: 2.5e-4
+gamma: 0.99
+gae_lambda: 0.95
+n_steps: 128
+batch_size: 256
+n_epochs: 4
+clip_eps: 0.1
+vf_coef: 0.5
+ent_coef: 0.01
+max_grad_norm: 0.5
+
+# 学习率衰减
+lr_scheduler:
+  type: LinearLR
+  start_factor: 1.0
+  end_factor: 0.0
+  total_iters: 10000000

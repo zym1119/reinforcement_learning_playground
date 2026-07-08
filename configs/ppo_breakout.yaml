@@ -1,0 +1,3 @@
+_base_: _base_/ppo_atari.yaml
+
+env: BreakoutNoFrameskip-v4
