@@ -3,9 +3,18 @@ from __future__ import annotations
 from typing import Any
 
 import gymnasium as gym
+import torch
 from gymnasium.wrappers import NumpyToTorch
 
 from env_utils.normalize_wrapper import NormalizeObservation, NormalizeReward
+from env_utils.torch_wrapper import VecNumpyToTorch
+
+# 注册 ALE/Atari 环境（gymnasium >= 1.0 需要显式注册）
+try:
+    import ale_py
+    gym.register_envs(ale_py)
+except ImportError:
+    pass
 
 
 def _is_atari(env_id: str) -> bool:
@@ -55,16 +64,16 @@ def _make_single_env(
         env = AtariWrapper(env, **atari_wrapper)
 
     # Observation normalization
-    if normalize.get('obs', False):
-        clip_obs = normalize.get('clip_obs', 10.0)
-        env = NormalizeObservation(env, clip=clip_obs)
+    obs_cfg = normalize.get('obs')
+    if obs_cfg:
+        env = NormalizeObservation(env, **obs_cfg)
         if not training:
             env.training = False
 
     # Reward normalization (only in training)
-    if training and normalize.get('reward', False):
-        clip_reward = normalize.get('clip_reward', 10.0)
-        env = NormalizeReward(env, gamma=gamma, clip=clip_reward)
+    reward_cfg = normalize.get('reward')
+    if training and reward_cfg:
+        env = NormalizeReward(env, gamma=gamma, **reward_cfg)
 
     # NumpyToTorch wrapper (outermost)
     env = NumpyToTorch(env, device=device)
@@ -112,23 +121,27 @@ def _make_vec_env(
                 env = AtariWrapper(env, **atari_wrapper)
 
             # Observation normalization
-            if normalize.get('obs', False):
-                clip_obs = normalize.get('clip_obs', 10.0)
-                env = NormalizeObservation(env, clip=clip_obs)
+            obs_cfg = normalize.get('obs')
+            if obs_cfg:
+                env = NormalizeObservation(env, **obs_cfg)
                 if not training:
                     env.training = False
 
             # Reward normalization (only in training)
-            if training and normalize.get('reward', False):
-                clip_reward = normalize.get('clip_reward', 10.0)
-                env = NormalizeReward(env, gamma=gamma, clip=clip_reward)
+            reward_cfg = normalize.get('reward')
+            if training and reward_cfg:
+                env = NormalizeReward(env, gamma=gamma, **reward_cfg)
 
             env.reset(seed=seed + rank if seed is not None else None)
             return env
         return _init
 
     vec_env_cls = gym.vector.AsyncVectorEnv if async_envs else gym.vector.SyncVectorEnv
-    return vec_env_cls([_make_env_fn(i) for i in range(num_envs)])
+    vec_env = vec_env_cls([_make_env_fn(i) for i in range(num_envs)])
+
+    # 包裹 NumpyToTorch
+    vec_env = VecNumpyToTorch(vec_env, device=device)
+    return vec_env
 
 
 def make_env(

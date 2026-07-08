@@ -1,8 +1,11 @@
-from typing import SupportsFloat, Any
+from __future__ import annotations
+
+from typing import SupportsFloat, Any, Tuple, Dict
 
 import gymnasium as gym
 import numpy as np
 from gymnasium import spaces
+from gymnasium.wrappers import FrameStackObservation
 
 try:
     import cv2
@@ -16,8 +19,8 @@ except ImportError:
 Atari 2600 preprocessings, copied from https://github.com/DLR-RM/stable-baselines3/blob/master/stable_baselines3/common/atari_wrappers.py
 """
 
-AtariResetReturn = tuple[np.ndarray, dict[str, Any]]
-AtariStepReturn = tuple[np.ndarray, SupportsFloat, bool, bool, dict[str, Any]]
+AtariResetReturn = Tuple[np.ndarray, Dict[str, Any]]
+AtariStepReturn = Tuple[np.ndarray, SupportsFloat, bool, bool, Dict[str, Any]]
 
 
 class StickyActionEnv(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
@@ -244,7 +247,7 @@ class WarpFrame(gym.ObservationWrapper[np.ndarray, int, np.ndarray]):
         self.observation_space = spaces.Box(
             low=0,
             high=255,
-            shape=(self.height, self.width, 1),
+            shape=(self.height, self.width),
             dtype=env.observation_space.dtype,  # type: ignore[arg-type]
         )
 
@@ -258,7 +261,7 @@ class WarpFrame(gym.ObservationWrapper[np.ndarray, int, np.ndarray]):
         assert cv2 is not None, "OpenCV is not installed, you can do `pip install opencv-python`"
         frame = cv2.cvtColor(frame, cv2.COLOR_RGB2GRAY)
         frame = cv2.resize(frame, (self.width, self.height), interpolation=cv2.INTER_AREA)
-        return frame[:, :, None]
+        return frame
 
 
 class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
@@ -275,6 +278,7 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
     * Grayscale observation
     * Clip reward to {-1, 0, 1}
     * Sticky actions: disabled by default
+    * Frame stacking: stack last N frames (4 by default)
 
     See https://danieltakeshi.github.io/2016/11/25/frame-skipping-and-preprocessing-for-deep-q-networks-on-atari-2600-games/
     for a visual explanation.
@@ -290,6 +294,7 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
     :param terminal_on_life_loss: If True, then step() returns terminated=True whenever a life is lost.
     :param clip_reward: If True (default), the reward is clip to {-1, 0, 1} depending on its sign.
     :param action_repeat_probability: Probability of repeating the last action
+    :param frame_stack: Number of frames to stack (default 4). Set to 1 to disable.
     """
 
     def __init__(
@@ -301,6 +306,7 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
         terminal_on_life_loss: bool = True,
         clip_reward: bool = True,
         action_repeat_probability: float = 0.0,
+        frame_stack: int = 4,
     ) -> None:
         if action_repeat_probability > 0.0:
             env = StickyActionEnv(env, action_repeat_probability)
@@ -316,5 +322,7 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
         env = WarpFrame(env, width=screen_size, height=screen_size)
         if clip_reward:
             env = ClipRewardEnv(env)
+        if frame_stack > 1:
+            env = FrameStackObservation(env, stack_size=frame_stack)
 
         super().__init__(env)

@@ -1,4 +1,5 @@
 from abc import ABC, abstractmethod
+import time
 
 import gymnasium as gym
 import torch
@@ -41,7 +42,9 @@ class BaseAgent(ABC):
         if mode == 'train':
             self.env = make_env(
                 config['env'],
+                num_envs=config.get('num_envs'),
                 env_kwargs=config.get('env_kwargs'),
+                atari_wrapper=config.get('atari_wrapper'),
                 normalize=norm_cfg,
                 gamma=gamma,
                 device=self.device,
@@ -50,6 +53,7 @@ class BaseAgent(ABC):
             self.eval_env = make_env(
                 config['env'],
                 env_kwargs=config.get('env_kwargs'),
+                atari_wrapper=config.get('atari_wrapper'),
                 normalize=norm_cfg,
                 gamma=gamma,
                 device=self.device,
@@ -62,6 +66,7 @@ class BaseAgent(ABC):
             self.env = make_env(
                 config['env'],
                 env_kwargs=config.get('env_kwargs'),
+                atari_wrapper=config.get('atari_wrapper'),
                 normalize=norm_cfg,
                 gamma=gamma,
                 device=self.device,
@@ -78,8 +83,11 @@ class BaseAgent(ABC):
         # 训练状态
         self.steps = 0
         self.episodes = 0
+        self.n_updates = 0
         self.best_eval_reward = -float('inf')
         self._latest_episode_reward = None
+        self._last_eval_step = 0
+        self._last_save_step = 0
 
         # 初始化模型
         self.init_model()
@@ -146,6 +154,7 @@ class BaseAgent(ABC):
             if 'episode_reward' in collect_info:
                 self._latest_episode_reward = collect_info['episode_reward']
             train_info = self.update()
+            self.n_updates += 1
             self._step_scheduler()
             self.after_update(collect_info, train_info)
         self.after_train()
@@ -162,43 +171,45 @@ class BaseAgent(ABC):
         mode = 'episode-based' if self.episode_based else 'step-based'
         self.logger.info(f'Mode: {mode}, target: {self._target}')
         self.logger.info(f'Run dir: {self.run_dir}')
+        self._train_start_time = time.time()
 
     def after_update(self, collect_info: dict, train_info: dict):
         """每次 update 后：logging + eval + checkpoint"""
-        counter = self._counter
-
-        # Logging
-        if counter % self.config.get('log_interval', 10) == 0:
+        # Logging（基于 update 计数）
+        log_interval = self.config.get('log_interval', 10)
+        if self.n_updates % log_interval == 0:
             for k, v in train_info.items():
-                self.logger.log_scalar(f'train/{k}', v, counter)
+                self.logger.log_scalar(f'train/{k}', v, self.steps)
             if self._latest_episode_reward is not None:
                 self.logger.log_scalar(
-                    'train/episode_reward', self._latest_episode_reward, counter)
+                    'train/episode_reward', self._latest_episode_reward, self.steps)
             # 记录当前 lr
             lr = self.get_current_lr()
             if lr is not None:
-                self.logger.log_scalar('train/lr', lr, counter)
+                self.logger.log_scalar('train/lr', lr, self.steps)
             info_str = ', '.join(f'{k}: {v:.4f}' for k, v in train_info.items())
             reward_val = f"{self._latest_episode_reward:.2f}" if self._latest_episode_reward is not None else "N/A"
             reward_str = f", reward: {reward_val}"
             lr_str = f"lr: {lr:.6f}, " if lr is not None else ""
-            self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] {lr_str}{info_str}{reward_str}')
+            eta_str = self._get_eta_str()
+            self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] {lr_str}{info_str}{reward_str}{eta_str}')
 
-        # Evaluation
-        if counter % self.config.get('eval_interval', 50) == 0:
+        # Evaluation（基于步数差值）
+        eval_freq = self.config.get('eval_interval', 50000)
+        if self.steps - self._last_eval_step >= eval_freq:
+            self._last_eval_step = self.steps
             eval_reward = self.evaluate()
-            self.logger.log_scalar('eval/reward', eval_reward, counter)
+            self.logger.log_scalar('eval/reward', eval_reward, self.steps)
             self.logger.info(f'[Ep {self.episodes}, Step {self.steps}] eval_reward: {eval_reward:.2f}')
             if eval_reward > self.best_eval_reward:
                 self.best_eval_reward = eval_reward
                 self.save_checkpoint('model_best.pth')
 
-        # Periodic checkpoint
-        if counter % self.config.get('save_interval', 100) == 0:
-            if self.episode_based:
-                self.save_checkpoint(f'model_ep{self.episodes}.pth')
-            else:
-                self.save_checkpoint(f'model_step{self.steps}.pth')
+        # Periodic checkpoint（基于步数差值）
+        save_freq = self.config.get('save_interval', 100000)
+        if self.steps - self._last_save_step >= save_freq:
+            self._last_save_step = self.steps
+            self.save_checkpoint(f'model_step{self.steps}.pth')
 
     def after_train(self):
         """训练结束：保存最终模型、关闭资源"""
@@ -246,6 +257,23 @@ class BaseAgent(ABC):
             return self.optimizer.param_groups[0]['lr']
         return None
 
+    def _get_eta_str(self) -> str:
+        """估算剩余训练时间"""
+        elapsed = time.time() - self._train_start_time
+        progress = self._counter / self._target
+        if progress <= 0:
+            return ''
+        eta_seconds = elapsed / progress * (1 - progress)
+        # 格式化为 HH:MM:SS 或 Xd HH:MM:SS
+        eta_h = int(eta_seconds // 3600)
+        eta_m = int((eta_seconds % 3600) // 60)
+        eta_s = int(eta_seconds % 60)
+        if eta_h >= 24:
+            days = eta_h // 24
+            eta_h = eta_h % 24
+            return f', ETA: {days}d {eta_h:02d}:{eta_m:02d}:{eta_s:02d}'
+        return f', ETA: {eta_h:02d}:{eta_m:02d}:{eta_s:02d}'
+
     def evaluate(self, n_episodes: int = 10) -> float:
         """用 eval_env 评估当前策略，返回平均 reward"""
         # 同步 obs 归一化统计量到 eval_env
@@ -279,14 +307,15 @@ class BaseAgent(ABC):
                 break
             eval_env = eval_env.env
         if isinstance(train_env, NormalizeObservation) and isinstance(eval_env, NormalizeObservation):
-            eval_env.obs_rms.load_state_dict(train_env.obs_rms.state_dict())
+            if hasattr(train_env, 'obs_rms') and hasattr(eval_env, 'obs_rms'):
+                eval_env.obs_rms.load_state_dict(train_env.obs_rms.state_dict())
 
     def _get_normalize_state(self) -> dict:
         """获取归一化 wrapper 的统计量"""
         state = {}
         env = self.env
         while hasattr(env, 'env'):
-            if isinstance(env, NormalizeObservation):
+            if isinstance(env, NormalizeObservation) and hasattr(env, 'obs_rms'):
                 state['obs_rms'] = env.obs_rms.state_dict()
             if isinstance(env, NormalizeReward):
                 state['return_rms'] = env.return_rms.state_dict()
@@ -297,7 +326,7 @@ class BaseAgent(ABC):
         """加载归一化 wrapper 的统计量"""
         env = self.env
         while hasattr(env, 'env'):
-            if isinstance(env, NormalizeObservation) and 'obs_rms' in state:
+            if isinstance(env, NormalizeObservation) and 'obs_rms' in state and hasattr(env, 'obs_rms'):
                 env.obs_rms.load_state_dict(state['obs_rms'])
             if isinstance(env, NormalizeReward) and 'return_rms' in state:
                 env.return_rms.load_state_dict(state['return_rms'])
@@ -312,6 +341,18 @@ class BaseAgent(ABC):
             save_dict['normalize'] = norm_state
         torch.save(save_dict, path)
         self.logger.info(f'Saved: {path}')
+
+        # 清理旧的 periodic checkpoint（不删 model_best / model_last）
+        max_keep = self.config.get('max_keep_ckpts', -1)
+        if max_keep > 0 and filename.startswith('model_step'):
+            if not hasattr(self, '_periodic_ckpts'):
+                self._periodic_ckpts = []
+            self._periodic_ckpts.append(path)
+            while len(self._periodic_ckpts) > max_keep:
+                old = self._periodic_ckpts.pop(0)
+                if old.exists():
+                    old.unlink()
+                    self.logger.info(f'Removed old ckpt: {old}')
 
     def load_checkpoint(self, ckpt_path: str):
         """加载 checkpoint，子类可 override 以支持多网络"""
