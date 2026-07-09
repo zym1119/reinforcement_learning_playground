@@ -73,7 +73,7 @@ class TestActorCriticAgent:
 
     def test_normalize_wrapper(self, ac_config):
         """验证归一化 wrapper 正常工作"""
-        ac_config['normalize'] = {'obs': True, 'reward': True}
+        ac_config['normalize'] = {'obs': {'mode': 'running'}, 'reward': {}}
         ac_config['exp_name'] = '_test_ac_norm'
         agent = create_agent(ac_config, mode='train')
         obs, _ = agent.env.reset()

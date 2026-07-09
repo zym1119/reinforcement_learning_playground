@@ -50,7 +50,7 @@ class DQNAgent(BaseAgent):
         obs, _ = self.env.reset()
         done = False
 
-        while len(self.buffer) < self.config.get('buffer_size', 10000) // 10:
+        while len(self.buffer) < max(self.config.get('buffer_size', 10000) // 10, self.batch_size):
             action = self.env.action_space.sample()
             next_obs, reward, terminated, truncated, _ = self.env.step(action)
             done = terminated or truncated
@@ -59,7 +59,8 @@ class DQNAgent(BaseAgent):
             if done:
                 obs, _ = self.env.reset()
                 done = False
-        self.logger.info(f"Prefilled replay buffer with {len(self.buffer)} transitions.")
+        if hasattr(self, 'logger'):
+            self.logger.info(f"Prefilled replay buffer with {len(self.buffer)} transitions.")
 
     def collect(self) -> dict:
         """Step-based: 每次走 1 步，episode 结束时返回 reward"""

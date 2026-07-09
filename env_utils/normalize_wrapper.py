@@ -42,15 +42,36 @@ class RunningMeanStd:
 
 
 class NormalizeObservation(gym.Wrapper):
-    """Normalize observations using running mean/std."""
-    def __init__(self, env, epsilon=1e-8, clip=10.0):
+    """Normalize observations.
+
+    Supports two modes:
+        - 'running': running mean/std normalization (default)
+        - 'fixed': divide by a fixed scale value (e.g. 255 for uint8 images)
+    """
+    def __init__(self, env, mode='running', epsilon=1e-8, clip=10.0, scale=255.0, **kwargs):
         super().__init__(env)
-        self.obs_rms = RunningMeanStd(shape=env.observation_space.shape)
+        self.mode = mode
         self.epsilon = epsilon
         self.clip = clip
+        self.scale = scale
         self.training = True
 
+        if mode == 'running':
+            self.obs_rms = RunningMeanStd(shape=env.observation_space.shape)
+
+        # 更新 observation_space 的 dtype 为 float32
+        obs_space = env.observation_space
+        self.observation_space = gym.spaces.Box(
+            low=obs_space.low.astype(np.float32),
+            high=obs_space.high.astype(np.float32),
+            shape=obs_space.shape,
+            dtype=np.float32,
+        )
+
     def normalize(self, obs):
+        if self.mode == 'fixed':
+            return (obs / self.scale).astype(np.float32)
+        # running mean/std
         return np.clip(
             (obs - self.obs_rms.mean) / np.sqrt(self.obs_rms.var + self.epsilon),
             -self.clip, self.clip
@@ -58,20 +79,20 @@ class NormalizeObservation(gym.Wrapper):
 
     def step(self, action):
         obs, reward, terminated, truncated, info = self.env.step(action)
-        if self.training:
+        if self.mode == 'running' and self.training:
             self.obs_rms.update(obs)
         return self.normalize(obs), reward, terminated, truncated, info
 
     def reset(self, **kwargs):
         obs, info = self.env.reset(**kwargs)
-        if self.training:
+        if self.mode == 'running' and self.training:
             self.obs_rms.update(obs)
         return self.normalize(obs), info
 
 
 class NormalizeReward(gym.Wrapper):
     """Normalize rewards using running std of discounted returns."""
-    def __init__(self, env, gamma=0.99, epsilon=1e-8, clip=10.0):
+    def __init__(self, env, gamma=0.99, epsilon=1e-8, clip=10.0, **kwargs):
         super().__init__(env)
         self.return_rms = RunningMeanStd(shape=())
         self.gamma = gamma

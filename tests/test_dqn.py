@@ -39,6 +39,7 @@ class TestDQNAgent:
 
     def test_update(self, dqn_config):
         agent = create_agent(dqn_config, mode='train')
+        agent.prefill_replay_buffer()
         agent.collect()
         train_info = agent.update()
         assert 'loss' in train_info
@@ -52,7 +53,7 @@ class TestDQNAgent:
 
     def test_replay_buffer_stores_tensors(self, dqn_config):
         agent = create_agent(dqn_config, mode='train')
-        # prefill 已经填了一些数据
+        agent.prefill_replay_buffer()
         obs, action, reward, next_obs, done = agent.buffer.buffer[0]
         assert isinstance(obs, torch.Tensor)
         assert isinstance(next_obs, torch.Tensor)
