@@ -95,13 +95,54 @@ class FireResetEnv(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
 
     def reset(self, **kwargs) -> AtariResetReturn:
         self.env.reset(**kwargs)
-        obs, _, terminated, truncated, _ = self.env.step(1)
+        obs, _, terminated, truncated, _ = self.env.step(1)  # FIRE
         if terminated or truncated:
             self.env.reset(**kwargs)
-        obs, _, terminated, truncated, _ = self.env.step(2)
+        obs, _, terminated, truncated, _ = self.env.step(2)  # RIGHT
         if terminated or truncated:
             self.env.reset(**kwargs)
         return obs, {}
+
+
+class FireOnLifeLoss(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
+    """
+    Automatically press FIRE after losing a life (for evaluation without EpisodicLifeEnv).
+
+    During training, EpisodicLifeEnv makes life loss terminal → reset → FireResetEnv fires.
+    During evaluation without EpisodicLifeEnv, life loss doesn't trigger reset,
+    so the ball never launches. This wrapper detects life loss and auto-fires.
+
+    :param env: Environment to wrap
+    """
+
+    def __init__(self, env: gym.Env) -> None:
+        super().__init__(env)
+        self.lives = 0
+        self.fire_action = 1  # FIRE is always action 1 in Atari
+
+    def reset(self, **kwargs) -> AtariResetReturn:
+        obs, info = self.env.reset(**kwargs)
+        self.lives = self.env.unwrapped.ale.lives()
+        # Fire to launch ball at game start
+        obs, _, terminated, truncated, info = self.env.step(self.fire_action)
+        if terminated or truncated:
+            obs, info = self.env.reset(**kwargs)
+        return obs, info
+
+    def step(self, action: int) -> AtariStepReturn:
+        obs, reward, terminated, truncated, info = self.env.step(action)
+        lives = self.env.unwrapped.ale.lives()
+        if 0 < lives < self.lives:
+            # Life lost - mimic training flow (EpisodicLifeEnv no-op + FireResetEnv fire)
+            # No-op to advance past death state
+            obs, _, terminated, truncated, info = self.env.step(0)
+            if not (terminated or truncated):
+                # Fire to launch ball
+                obs, _, terminated, truncated, info = self.env.step(self.fire_action)
+            # Update lives AFTER fire (in case another life was lost during fire)
+            lives = self.env.unwrapped.ale.lives()
+        self.lives = lives
+        return obs, reward, terminated, truncated, info
 
 
 class EpisodicLifeEnv(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
@@ -315,10 +356,15 @@ class AtariWrapper(gym.Wrapper[np.ndarray, int, np.ndarray, int]):
         # frame_skip=1 is the same as no frame-skip (action repeat)
         if frame_skip > 1:
             env = MaxAndSkipEnv(env, skip=frame_skip)
+        # Record true episode statistics (before EpisodicLifeEnv)
+        env = gym.wrappers.RecordEpisodeStatistics(env)
         if terminal_on_life_loss:
             env = EpisodicLifeEnv(env)
         if "FIRE" in env.unwrapped.get_action_meanings():  # type: ignore[attr-defined]
-            env = FireResetEnv(env)
+            if terminal_on_life_loss:
+                env = FireResetEnv(env)
+            else:
+                env = FireOnLifeLoss(env)
         env = WarpFrame(env, width=screen_size, height=screen_size)
         if clip_reward:
             env = ClipRewardEnv(env)

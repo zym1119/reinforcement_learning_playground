@@ -33,7 +33,8 @@ class BaseAgent(ABC):
         self.config = config
         self.mode = mode
         self.device = get_device(config.get('device', 'auto'))
-        set_seed(config.get('seed', 42))
+        self.seed = config.get('seed', 42)
+        set_seed(self.seed)
 
         # 环境
         norm_cfg = config.get('normalize', {})
@@ -49,6 +50,7 @@ class BaseAgent(ABC):
                 gamma=gamma,
                 device=self.device,
                 training=True,
+                seed=self.seed,
             )
             self.eval_env = make_env(
                 config['env'],
@@ -58,6 +60,7 @@ class BaseAgent(ABC):
                 gamma=gamma,
                 device=self.device,
                 training=False,
+                seed=self.seed + 1000,
             )
         else:
             eval_cfg = config.get('evaluation', {})
@@ -72,6 +75,7 @@ class BaseAgent(ABC):
                 device=self.device,
                 training=False,
                 render_mode=render_mode,
+                seed=self.seed,
             )
             # eval 模式下的 episode/step 限制
             self.total_episodes = eval_cfg.get('total_episodes')
@@ -244,6 +248,13 @@ class BaseAgent(ABC):
             self.scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
                 self.optimizer,
                 T_max=sched_cfg.get('T_max', self._target),
+            )
+        elif sched_type == 'LinearLR':
+            self.scheduler = torch.optim.lr_scheduler.LinearLR(
+                self.optimizer,
+                start_factor=sched_cfg.get('start_factor', 1.0),
+                end_factor=sched_cfg.get('end_factor', 0.0),
+                total_iters=sched_cfg.get('total_iters', self._target),
             )
 
     def _step_scheduler(self):

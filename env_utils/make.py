@@ -195,6 +195,10 @@ def make_env(
         atari_cfg = None
     else:
         atari_cfg = dict(atari_wrapper)
+    # terminal_on_life_loss 仅在训练时启用
+    if not training and atari_cfg is not None:
+        atari_cfg['terminal_on_life_loss'] = False
+        atari_cfg['clip_reward'] = False
 
     if num_envs is None or num_envs <= 1:
         # 单环境

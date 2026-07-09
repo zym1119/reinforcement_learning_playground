@@ -10,18 +10,21 @@ A modular RL framework for experimenting with various reinforcement learning alg
 │   ├── policy_gradient.py   # REINFORCE (PGAgent)
 │   ├── dqn.py               # DQN / Double DQN
 │   ├── actor_critic.py      # Actor-Critic (A2C)
+│   ├── ppo_atari.py         # PPO for Atari image observations
 │   └── soft_actor_critic.py # SAC (Soft Actor-Critic)
 ├── blocks/
 │   ├── mlp.py               # MLP builder with orthogonal init
 │   ├── distributions.py     # CategoricalDist, GaussianDist
 │   ├── replay_buffer.py     # ReplayBuffer for off-policy methods
-│   └── normalize_wrapper.py # Obs/Reward normalization wrappers
+│   └── rollout_buffer.py    # RolloutBuffer for on-policy methods
 ├── configs/
 │   ├── _base_/              # Base configs (default.yaml, pg.yaml, dqn.yaml, sac.yaml, etc.)
 │   ├── pg_cartpole.yaml     # CartPole + PolicyGradient
 │   ├── dqn_cartpole.yaml    # CartPole + DQN
 │   ├── ac_cartpole.yaml     # CartPole + Actor-Critic
+│   ├── ppo_breakout.yaml    # Breakout + PPOAtari
 │   └── sac_walker2d.yaml    # Walker2d + SAC
+├── env_utils/               # Env construction, Atari wrappers, normalization wrappers
 ├── tools/
 │   └── visualize_env.py     # Record env video with random actions
 ├── train.py                 # Training entry point
@@ -46,6 +49,12 @@ pip install opencv-python imageio[ffmpeg]
 
 ```bash
 python train.py --config configs/pg_cartpole.yaml --exp-name my_experiment
+```
+
+Atari PPO example:
+
+```bash
+python train.py --config configs/ppo_breakout.yaml --exp-name ppo_breakout
 ```
 
 Override config values from command line:
@@ -74,9 +83,17 @@ lr: 1e-3
 
 Features:
 - Hierarchical inheritance via `_base_`
-- LR scheduler config (StepLR / ExponentialLR / CosineAnnealingLR)
+- LR scheduler config (StepLR / ExponentialLR / CosineAnnealingLR / LinearLR)
 - Evaluation config (episode/step-based, video recording)
 - CLI overrides with `--overrides key=value`
+
+## Atari PPO Notes
+
+`PPOAtari` follows the common Nature CNN / SB3 / CleanRL Atari setup: 84x84 grayscale frame stacks, reward clipping for training, orthogonal initialization, clipped PPO updates, optional advantage normalization, approximate KL logging, and linear learning-rate decay by update count.
+
+Training uses `EpisodicLifeEnv` by default so losing a life produces an on-policy episode boundary. The Atari wrapper records true game-level episode statistics before that life-loss wrapper, so `train/episode_reward` reflects full-game returns instead of per-life returns when Gymnasium reports completed episodes.
+
+Evaluation environments disable `terminal_on_life_loss` and reward clipping to report full-game scores. For games that require `FIRE`, `FireOnLifeLoss` keeps evaluation episodes moving after a life loss without splitting the game into per-life episodes.
 
 ## Implement Your Own Algorithm
 
@@ -118,4 +135,4 @@ class YourAgent(BaseAgent):
 | DQN / Double DQN | Off-policy | ✅ |
 | Actor-Critic (A2C) | On-policy | ✅ |
 | SAC (Soft Actor-Critic) | Off-policy | ✅ |
-| PPO | On-policy | Planned |
+| PPO Atari | On-policy | ✅ |

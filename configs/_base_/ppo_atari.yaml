@@ -4,6 +4,9 @@ algorithm: PPOAtari
 
 # 并行环境
 num_envs: 8
+seed: 666
+env_kwargs:
+  repeat_action_probability: 0.25
 
 # obs 归一化（Atari 图像 /255）
 normalize:
@@ -29,10 +32,16 @@ clip_eps: 0.1
 vf_coef: 0.5
 ent_coef: 0.01
 max_grad_norm: 0.5
+normalize_advantage: true
+# target_kl: 0.01
 
-# 学习率衰减
+# 学习率衰减（total_iters 按 update 次数算: total_steps / (num_envs * n_steps)）
 lr_scheduler:
   type: LinearLR
   start_factor: 1.0
   end_factor: 0.0
-  total_iters: 10000000
+  total_iters: 9766
+
+evaluation:
+  total_episodes: 1
+  fps: 10
